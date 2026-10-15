@@ -1,4 +1,5 @@
-"# Social Network Backend`nASP.NET Core Web API (.NET 10)" | Out-File README.md -Encoding utf8
+# Social Network Backend
+ASP.NET Core Web API (.NET 10)
 
 ## Правила роботи з Git
 
