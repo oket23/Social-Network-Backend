@@ -1,0 +1,62 @@
+# Локальне середовище розробки.
+#   docker compose up -d                 — БД, пошта, сховище файлів (API запускаємо з Rider)
+#   docker compose --profile full up -d  — те саме + API в контейнері (http://localhost:8080)
+name: socialnetwork
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: socialnetwork
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d socialnetwork"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Локальний "поштовий ящик": усі листи ловляться тут, веб-інтерфейс — http://localhost:5080
+  smtp4dev:
+    image: rnwood/smtp4dev:v3
+    ports:
+      - "5080:80"
+      - "2525:25"
+
+  # Емулятор Azure Blob Storage (аватари, фото, відео)
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite
+    command: azurite-blob --blobHost 0.0.0.0 --loose --skipApiVersionCheck
+    ports:
+      - "10000:10000"
+    volumes:
+      - azurite-data:/data
+
+  api:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: src/SocialNetwork.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=socialnetwork;Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-postgres}
+      # Береться з .env (див. .env.example); без нього API не стартує з зрозумілою помилкою.
+      Jwt__Key: ${JWT_KEY:-}
+      Smtp__Host: smtp4dev
+      Smtp__Port: 25
+      # Стандартний (публічно відомий) ключ емулятора Azurite — не секрет.
+      # host.docker.internal доступний і з контейнера, і з браузера (Docker Desktop), тож URL аватарів відкриються.
+      Storage__ConnectionString: DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://host.docker.internal:10000/devstoreaccount1;
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  azurite-data:
