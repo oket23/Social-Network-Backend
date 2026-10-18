@@ -46,13 +46,14 @@ docker compose up -d
 # 2. Секрет для підпису JWT (один раз; зберігається поза репозиторієм)
 dotnet user-secrets set "Jwt:Key" "будь-який-випадковий-рядок-мінімум-32-символи" --project src/SocialNetwork.Api
 
-# 3. Схема БД
-dotnet tool restore
-dotnet ef database update -p src/SocialNetwork.Infrastructure -s src/SocialNetwork.Api
-
-# 4. Запуск
+# 3. Запуск (або ▶ у Rider). Міграції БД застосовуються автоматично при старті в Development.
 dotnet run --project src/SocialNetwork.Api
 ```
+
+Крок 2 — **один раз на комп'ютер**. Щодня достатньо `docker compose up -d` і запуску API.
+
+Усе в Docker, без .NET (зручно для фронтенду): `cp .env.example .env`, потім
+`docker compose --profile full up -d --build` → http://localhost:8080/scalar.
 
 | URL | Що це |
 |---|---|

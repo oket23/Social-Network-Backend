@@ -1,9 +1,11 @@
+using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 using Serilog;
 using SocialNetwork.Api.Middlewares;
 using SocialNetwork.Api.OpenApi;
 using SocialNetwork.Application;
 using SocialNetwork.Infrastructure;
+using SocialNetwork.Infrastructure.Persistence;
 
 namespace SocialNetwork.Api;
 
@@ -27,6 +29,15 @@ public class Program
             .AddApi(builder.Configuration);
 
         var app = builder.Build();
+
+        // Локально (Development) нові міграції застосовуються автоматично при старті —
+        // не треба після кожного git pull запускати "dotnet ef database update".
+        // На staging/production міграції застосовує CI (deploy.yml), а не застосунок.
+        if (app.Environment.IsDevelopment())
+        {
+            using var scope = app.Services.CreateScope();
+            scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.Migrate();
+        }
 
         app.UseForwardedHeaders();
         app.UseMiddleware<GlobalExceptionHandlingMiddleware>();

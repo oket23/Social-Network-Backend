@@ -139,6 +139,10 @@ dotnet ef database update <НазваПопередньоїМіграції> -p 
 
 **Правило:** міграцію, яка вже застосована на staging/production, не редагуємо — створюємо нову.
 
+**Локально** `database update` вручну не потрібен: у Development `Program.cs` викликає `Database.Migrate()` при старті,
+тож після `git pull` з новою міграцією достатньо перезапустити API. На staging/production міграції застосовує CI
+(`deploy.yml`) окремим кроком — якщо кілька копій API стартують одночасно, автоміграція при старті може конфліктувати.
+
 Конфігурація таблиць — у класах `IEntityTypeConfiguration<T>` (`UserConfiguration`): довжини полів, індекси,
 зв'язки, soft delete (`HasQueryFilter(u => u.DeletedAt == null)` — «видалені» записи автоматично не потрапляють у запити).
 
@@ -258,10 +262,8 @@ dotnet new tool-manifest && dotnet tool install dotnet-ef
 ### Локальний запуск
 ```bash
 docker compose up -d
-dotnet user-secrets set "Jwt:Key" "<будь-який рядок 32+ символи>" --project src/SocialNetwork.Api
-dotnet tool restore
-dotnet ef database update -p src/SocialNetwork.Infrastructure -s src/SocialNetwork.Api
-dotnet run --project src/SocialNetwork.Api
+dotnet user-secrets set "Jwt:Key" "<будь-який рядок 32+ символи>" --project src/SocialNetwork.Api   # один раз
+dotnet run --project src/SocialNetwork.Api      # міграції застосуються автоматично
 # http://localhost:5298/scalar — документація API, http://localhost:5080 — листи
 ```
 
