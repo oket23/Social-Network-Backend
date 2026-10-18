@@ -7,9 +7,11 @@
 #   variables: AZURE_RESOURCE_GROUP, POSTGRES_SERVER_NAME, WEBAPP_NAME
 name: Deploy
 
+# ТИМЧАСОВО лише ручний запуск: Azure-ресурси ще не створені (чекаємо Azure for Students).
+# Коли Azure буде налаштовано — розкоментувати push.
 on:
-  push:
-    branches: [dev, main]
+  # push:
+  #   branches: [dev, main]
   workflow_dispatch:
 
 permissions:
