@@ -1,0 +1,104 @@
+# Деплой: push у dev → staging, push у main → production.
+# Кроки: тести → Docker-образ у GitHub Container Registry → міграції БД → оновлення Azure App Service.
+#
+# Потрібні налаштування в GitHub (Settings → Environments → staging / production):
+#   secrets:   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID  (вхід в Azure через OIDC, без паролів)
+#              DB_CONNECTION                                            (рядок підключення до Azure PostgreSQL)
+#   variables: AZURE_RESOURCE_GROUP, POSTGRES_SERVER_NAME, WEBAPP_NAME
+name: Deploy
+
+on:
+  push:
+    branches: [dev, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/socialnetwork-api
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # ---------- Docker-образ ----------
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: src/SocialNetwork.Api/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:${{ github.ref_name == 'main' && 'production' || 'staging' }}
+
+      # ---------- Вхід в Azure ----------
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # ---------- Міграції БД ----------
+      # Тимчасово відкриваємо firewall PostgreSQL для IP цього GitHub-раннера, застосовуємо міграції і закриваємо.
+      - name: Open database firewall for runner
+        id: firewall
+        run: |
+          IP=$(curl -s https://api.ipify.org)
+          RULE="github-${{ github.run_id }}"
+          echo "rule=$RULE" >> "$GITHUB_OUTPUT"
+          az postgres flexible-server firewall-rule create \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" --name "${{ vars.POSTGRES_SERVER_NAME }}" \
+            --rule-name "$RULE" --start-ip-address "$IP" --end-ip-address "$IP" --output none
+
+      - name: Apply EF Core migrations
+        run: |
+          dotnet tool restore
+          dotnet ef database update \
+            --project src/SocialNetwork.Infrastructure --startup-project src/SocialNetwork.Api \
+            --connection "${{ secrets.DB_CONNECTION }}"
+
+      - name: Close database firewall
+        if: always() && steps.firewall.outputs.rule != ''
+        run: |
+          az postgres flexible-server firewall-rule delete --yes \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" --name "${{ vars.POSTGRES_SERVER_NAME }}" \
+            --rule-name "${{ steps.firewall.outputs.rule }}"
+
+      # ---------- Деплой ----------
+      - uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.WEBAPP_NAME }}
+          images: ${{ env.IMAGE }}:${{ github.sha }}
+
+      - name: Smoke test /health
+        run: |
+          URL="https://$(az webapp show -g "${{ vars.AZURE_RESOURCE_GROUP }}" -n "${{ vars.WEBAPP_NAME }}" --query defaultHostName -o tsv)"
+          for i in $(seq 1 30); do
+            if curl -fsS "$URL/health"; then echo; echo "OK: $URL"; exit 0; fi
+            sleep 10
+          done
+          echo "API не відповідає на $URL/health"; exit 1
