@@ -1,3 +1,11 @@
 <Solution>
-  <Project Path="SocialNetwork.Api/SocialNetwork.Api.csproj" />
+  <Folder Name="/src/">
+    <Project Path="src/SocialNetwork.Api/SocialNetwork.Api.csproj" />
+    <Project Path="src/SocialNetwork.Application/SocialNetwork.Application.csproj" />
+    <Project Path="src/SocialNetwork.Domain/SocialNetwork.Domain.csproj" />
+    <Project Path="src/SocialNetwork.Infrastructure/SocialNetwork.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SocialNetwork.Tests/SocialNetwork.Tests.csproj" />
+  </Folder>
 </Solution>

@@ -2,63 +2,47 @@
 
 ## Поля профілю
 
-| Поле | Тип | Обов'язкове | Редагується через PUT /users/me | Примітка |
-|---|---|---|---|---|
-| Id | Guid | так (генерується сервером) | ні | |
-| Username | string(30) | так | так | унікальне, `^[a-zA-Z0-9_]+$`, 3–30 символів |
-| Email | string(256) | так | ні (зміна email — окрема функція з підтвердженням) | унікальне |
-| PasswordHash | string | так | ні (окремий ендпоінт `PUT /users/me/password`) | ніколи не повертається в DTO |
-| DisplayName (ім'я) | string(50) | так | так | |
-| Bio | string(160) | ні | так | |
-| WebsiteUrl | string(200) | ні | так | валідний URL |
-| AvatarUrl | string | ні | ні (через `POST /users/me/avatar`) | |
-| IsPrivate | bool | так (default `false`) | так | |
-| CreatedAt | DateTime | так (ставиться сервером) | ні | |
+| Поле (API) | Колонка БД | Тип | Обов'язкове | Редагується через PUT /users/me | Примітка |
+|---|---|---|---|---|---|
+| id | id | uuid | так (генерується сервером) | ні | |
+| username | user_name | string(30) | так | так | унікальне (без урахування регістру), `^[a-zA-Z0-9_.]+$`, 3–30 символів |
+| email | email | string(256) | так | ні (зміна email — окрема функція з підтвердженням) | унікальне |
+| emailConfirmed | email_confirmed | bool | так | ні (через посилання з листа) | |
+| — | password_hash | string | так | ні (`PUT /users/me/password`) | ніколи не повертається в API |
+| displayName (ім'я) | display_name | string(50) | так | так | |
+| bio | bio | string(160) | ні | так | |
+| websiteUrl | website_url | string(200) | ні | так | лише http/https URL |
+| avatarUrl | avatar_url | string(500) | ні | ні (`POST /users/me/avatar`) | URL у Blob Storage |
+| isPrivate | is_private | bool | так (default `false`) | так | |
+| createdAt | created_at | timestamptz | так (ставиться сервером) | ні | UTC |
+| — | deleted_at | timestamptz | ні | ні | soft delete |
 
 ## Рішення: реєстрація одно- чи багатокрокова
 
-**Прийнято: одностадійна реєстрація** (email + username + password в одному запиті).
+**Прийнято: одностадійна реєстрація** (email + username + displayName + password в одному запиті).
 Причина: менше проміжних станів користувача в БД (немає "недореєстрованих" акаунтів),
-простіше фронту й бекенду на старті проєкту. Реалізація реєстрації/логіну (JWT) —
-окрема картка; наразі `GET/PUT /users/me` використовують тимчасову заглушку
-`DevCurrentUserService` (див. нижче).
+простіше фронту й бекенду. Після реєстрації користувач одразу отримує токени; email підтверджується
+окремо за посиланням з листа (вхід без підтвердження дозволений, поле `emailConfirmed` показує стан).
 
 ## Схема БД
 
-Один проєкт — один клас `User`, у якому суміщені обліковий запис і профіль
-(без окремої таблиці `Profile`), щоб не ускладнювати на старті:
+Один клас `User` (наслідує `IdentityUser<Guid>`), у якому суміщені обліковий запис і профіль (таблиця `users`).
+Повна схема й заплановані зв'язки (Follow, Post тощо) — у [architecture.md](architecture.md#схема-бд).
 
-```
-Users
-├── Id (PK, uniqueidentifier)
-├── Username (unique)
-├── Email (unique)
-├── PasswordHash
-├── DisplayName
-├── Bio (nullable)
-├── WebsiteUrl (nullable)
-├── AvatarUrl (nullable)
-├── IsPrivate
-└── CreatedAt
-```
+## Автентифікація
 
-Заплановані зв'язки на майбутнє (не реалізовані в цій картці):
-- **Follow**: таблиця `Follows(FollowerId → Users.Id, FollowingId → Users.Id)`, складений PK/унікальний індекс на парі, self-referencing many-to-many.
-- **Post**: таблиця `Posts(Id, AuthorId → Users.Id, ...)`, one-to-many `User → Posts`.
-
-## Тимчасова автентифікація
-
-Реальної реєстрації/логіну ще немає. `ICurrentUserService` (інтерфейс) /
-`DevCurrentUserService` (реалізація) завжди повертають Id seed-користувача
-`dev_user` (`11111111-1111-1111-1111-111111111111`). Коли буде готовий
-логін на JWT — замінити реєстрацію DI в `Program.cs` на реалізацію, що бере
-`userId` з claims токена; контролер і DTO міняти не потрібно.
+Реалізована (ASP.NET Core Identity + JWT). Id поточного користувача береться з claim `sub` токена
+(`HttpContextCurrentUserService`). Тимчасова заглушка `DevCurrentUserService` і seed-користувач `dev_user` видалені.
 
 ## API-контракт (для фронту)
 
-- `GET /users/me` → `UserProfileDto`
-- `PUT /users/me` ← `UpdateUserProfileRequest` → `UserProfileDto`
-- `PUT /users/me/password` ← `ChangePasswordRequest` → `204 No Content`
-- `POST /users/me/avatar` (multipart/form-data, поле `file`) → `UserProfileDto`
+Усі відповіді обгорнуті: `{ "success": true, "message": "...", "data": ... }`.
 
-Форми DTO — у `SocialNetwork.Api/Dtos/`.
+- `GET /users/me` → `data: UserProfileResponse`
+- `PUT /users/me` ← `{ username, displayName, bio?, websiteUrl?, isPrivate }` → `data: UserProfileResponse`
+- `PUT /users/me/password` ← `{ currentPassword, newPassword }` → `{ success, message }`; усі інші сесії завершуються
+- `POST /users/me/avatar` (multipart/form-data, поле `file`, JPEG/PNG/WEBP ≤ 5 МБ) → `data: UserProfileResponse`
+
+Помилки: `400` (валідація, `errors` по полях), `401` (немає/прострочений токен), `409` (username зайнятий).
+
+Форми DTO — у `src/SocialNetwork.Application/Users/Requests` і `Responses`.
