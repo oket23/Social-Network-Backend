@@ -1,0 +1,37 @@
+# Щоденний бекап staging-БД (вимога ТЗ: резервне копіювання).
+# Дамп зберігається як artifact цього workflow 14 днів: Actions → Backup staging DB → потрібний запуск → Artifacts.
+# Відновлення — docs/deployment.md, розділ «Бекап і відновлення».
+#
+# Потрібно в GitHub (Settings → Environments → staging):
+#   secrets: STAGING_DB_URL — рядок підключення Neon у форматі URL (postgresql://user:password@host/db?sslmode=require)
+#
+# Важливо: GitHub запускає scheduled-workflow лише з гілки за замовчуванням (main),
+# тому автоматичні бекапи почнуться після мерджу dev → main.
+name: Backup staging DB
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # щодня о 03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: pg_dump
+        env:
+          DB_URL: ${{ secrets.STAGING_DB_URL }}
+        run: |
+          FILE="staging-$(date -u +%Y-%m-%d_%H-%M).dump"
+          echo "FILE=$FILE" >> "$GITHUB_ENV"
+          # pg_dump з образу postgres:17 — версія клієнта має бути не старшою за версію сервера Neon.
+          docker run --rm -v "$PWD:/backup" postgres:17 \
+            pg_dump "$DB_URL" --format=custom --no-owner --file "/backup/$FILE"
+          ls -lh "$FILE"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.FILE }}
+          path: ${{ env.FILE }}
+          retention-days: 14
