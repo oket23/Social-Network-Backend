@@ -2,7 +2,7 @@ namespace SocialNetwork.Application.Common.Abstractions;
 
 /// <summary>
 /// Сховище файлів (аватари, далі — фото/відео постів).
-/// Реалізація: Azure Blob Storage (локально — емулятор Azurite у Docker).
+/// Реалізація: S3-сумісне сховище (локально — MinIO у Docker, на staging — Supabase Storage).
 /// </summary>
 public interface IFileStorage
 {

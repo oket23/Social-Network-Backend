@@ -1,8 +1,10 @@
 # Social Network Backend
 
 Backend навчального клону Instagram: REST API на **ASP.NET Core (.NET 10)**, **PostgreSQL**,
-**ASP.NET Core Identity + JWT**, Docker, Azure.
+**ASP.NET Core Identity + JWT**, Docker. Staging розгорнуто на Render.
 
+- **API для фронтенду (staging):** `https://<сервіс>.onrender.com` — документація `/scalar`, специфікація `/openapi/v1.json`
+- Деплой і налаштування сервісів: [docs/deployment.md](docs/deployment.md)
 - Архітектура (модульний моноліт, Clean Architecture): [docs/architecture.md](docs/architecture.md)
 - Пояснення кожного рішення і як повторити з нуля: [docs/learning-guide.md](docs/learning-guide.md)
 - Правила для Claude Code / розробників: [CLAUDE.md](CLAUDE.md)
@@ -15,11 +17,11 @@ Backend навчального клону Instagram: REST API на **ASP.NET Cor
 | БД | PostgreSQL 17, EF Core 10 (Npgsql), міграції |
 | Авторизація | ASP.NET Core Identity, JWT access (15 хв) + refresh (7 днів, ротація) |
 | Валідація | FluentValidation |
-| Файли | Azure Blob Storage (локально Azurite) |
-| Пошта | SMTP через MailKit (локально smtp4dev) |
+| Файли | S3-сумісне сховище: Supabase Storage (локально RustFS) |
+| Пошта | SMTP через MailKit: Brevo (локально smtp4dev) |
 | Логи | Serilog |
 | Тести | xUnit, WebApplicationFactory, Testcontainers |
-| Інфраструктура | Docker, GitHub Actions, Azure App Service + Azure Database for PostgreSQL |
+| Інфраструктура | Docker, GitHub Actions, Render (API), Neon (PostgreSQL), UptimeRobot (моніторинг) |
 
 ## Структура
 
@@ -27,12 +29,14 @@ Backend навчального клону Instagram: REST API на **ASP.NET Cor
 src/
   SocialNetwork.Domain          сутності
   SocialNetwork.Application     бізнес-логіка (сервіси), DTO, валідатори
-  SocialNetwork.Infrastructure  EF Core, репозиторії, Unit of Work, JWT, SMTP, Blob Storage, міграції
+  SocialNetwork.Infrastructure  EF Core, репозиторії, Unit of Work, JWT, SMTP, S3-сховище, міграції
   SocialNetwork.Api             контролери, middleware, Program.cs, Dockerfile
 tests/
   SocialNetwork.Tests           unit + інтеграційні тести
-docs/                           архітектура, гайд, дизайн профілю
-docker-compose.yml              PostgreSQL, smtp4dev, Azurite (+ API з профілем full)
+docs/                           архітектура, деплой, гайд, дизайн профілю
+docker-compose.yml              PostgreSQL, smtp4dev, RustFS (+ API з профілем full)
+render.yaml                     опис сервісу на Render
+.github/workflows/              CI (тести), деплой staging, щоденний бекап БД
 ```
 
 ## Швидкий старт
@@ -40,7 +44,7 @@ docker-compose.yml              PostgreSQL, smtp4dev, Azurite (+ API з проф
 Потрібні: [Docker Desktop](https://www.docker.com/products/docker-desktop/), .NET SDK 10, Rider або VS.
 
 ```bash
-# 1. Залежності: PostgreSQL, smtp4dev (пошта), Azurite (файли)
+# 1. Залежності: PostgreSQL, smtp4dev (пошта), RustFS (файли)
 docker compose up -d
 
 # 2. Секрет для підпису JWT (один раз; зберігається поза репозиторієм)
@@ -58,8 +62,9 @@ dotnet run --project src/SocialNetwork.Api
 | URL | Що це |
 |---|---|
 | http://localhost:5298/scalar | документація API (кнопка Auth → вставити `accessToken`) |
-| http://localhost:5298/health | перевірка стану |
+| http://localhost:5298/health | перевірка стану (API + БД) |
 | http://localhost:5080 | smtp4dev — усі листи (підтвердження email, скидання пароля) |
+| http://localhost:9001 | консоль RustFS — завантажені файли (логін/пароль з `.env.example`: `devaccess` / `devsecret123`) |
 
 Тести: `dotnet test` (Docker має бути запущений — інтеграційні тести піднімають власний PostgreSQL).
 
@@ -88,31 +93,39 @@ dotnet run --project src/SocialNetwork.Api
 | PUT | `/users/me/password` | Bearer | зміна пароля |
 | POST | `/users/me/avatar` | Bearer | аватар (multipart, поле `file`, JPEG/PNG/WEBP ≤ 5 МБ) |
 | GET | `/health` | — | стан API і БД |
+| GET | `/health/live` | — | лише «API живий», без БД (для пінгу UptimeRobot) |
 
 Rate limiting: 5 запитів/хв з однієї IP на `register`, `login`, `forgot-password`, `reset-password` (відповідь `429`).
+
+**Для фронтенду:**
+- Авторизація: після `login`/`register` надсилати `Authorization: Bearer <accessToken>`; на `401` — `POST /auth/refresh`
+  з `refreshToken` і повторити запит; refresh теж `401` → на сторінку входу.
+- Access-токен живе 15 хв, refresh — 7 днів і **одноразовий** (після refresh використовувати новий).
+- Адресу фронту треба додати в CORS (`Cors__AllowedOrigins__0` на Render), інакше браузер блокуватиме запити.
+- Типи для TypeScript можна згенерувати з `/openapi/v1.json` (наприклад, `openapi-typescript`).
 
 ## Конфігурація
 
 | Ключ | Опис | Де задається |
 |---|---|---|
-| `ConnectionStrings:DefaultConnection` | рядок підключення PostgreSQL | Dev: `appsettings.Development.json` (локальний Docker); Azure: App Settings |
-| `Jwt:Key` | секрет підпису JWT (≥ 32 символи) | Dev: user-secrets; Azure: App Settings |
+| `ConnectionStrings:DefaultConnection` | рядок підключення PostgreSQL | Dev: `appsettings.Development.json` (локальний Docker); staging: Render (Neon) |
+| `Jwt:Key` | секрет підпису JWT (≥ 32 символи) | Dev: user-secrets; staging: Render (генерується) |
 | `Jwt:AccessTokenMinutes`, `Jwt:RefreshTokenDays` | терміни дії токенів | `appsettings.json` |
-| `Smtp:*` | Host, Port, Security (None/StartTls/...), Username, Password, FromEmail | Dev: smtp4dev; Azure: App Settings |
-| `Storage:ConnectionString` | Azure Storage (`UseDevelopmentStorage=true` для Azurite) | Azure: App Settings |
-| `Frontend:BaseUrl` | адреса фронту для посилань у листах | App Settings |
-| `Cors:AllowedOrigins` | дозволені адреси фронту | App Settings (`Cors__AllowedOrigins__0=...`) |
+| `Smtp:*` | Host, Port, Security (None/StartTls/...), Username, Password, FromEmail | Dev: smtp4dev; staging: Render (Brevo) |
+| `Storage:*` | ServiceUrl, Region, AccessKey, SecretKey, BucketName, PublicBaseUrl — S3-сховище | Dev: RustFS; staging: Render (Supabase) |
+| `Frontend:BaseUrl` | адреса фронту для посилань у листах | Render |
+| `Cors:AllowedOrigins` | дозволені адреси фронту | Render (`Cors__AllowedOrigins__0=...`) |
 | `OpenApi:Enabled` | показувати `/scalar` поза Development | staging: `true` |
 
-В Azure/Docker двокрапка замінюється на `__`: `Jwt__Key`, `ConnectionStrings__DefaultConnection`.
+У змінних середовища (Render, Docker) двокрапка замінюється на `__`: `Jwt__Key`, `ConnectionStrings__DefaultConnection`.
 
 ## Деплой
 
-Автоматично через GitHub Actions ([.github/workflows/deploy.yml](.github/workflows/deploy.yml)):
-push у `dev` → **staging**, push у `main` → **production**. Кожен PR перевіряється `ci.yml` (збірка + тести).
+Push у `dev` → GitHub Actions ([deploy-staging.yml](.github/workflows/deploy-staging.yml)):
+тести → міграції БД (Neon) → деплой на Render → перевірка `/health`. Кожен PR перевіряється `ci.yml` (збірка + тести).
+Щоденний бекап БД — [backup.yml](.github/workflows/backup.yml).
 
-Кроки деплою: тести → Docker-образ у GitHub Container Registry → міграції БД → оновлення Azure App Service → перевірка `/health`.
-Створення ресурсів Azure і відновлення з бекапу — у [docs/architecture.md](docs/architecture.md#резервне-копіювання-та-відновлення).
+Налаштування сервісів з нуля, бекап і відновлення, діагностика — [docs/deployment.md](docs/deployment.md).
 
 ## Правила роботи з Git
 

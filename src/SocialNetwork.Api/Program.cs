@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 using Serilog;
@@ -15,7 +16,7 @@ public class Program
     {
         var builder = WebApplication.CreateBuilder(args);
 
-        // Логи пишемо в консоль (stdout) — у Docker і Azure App Service їх видно в log stream.
+        // Логи пишемо в консоль (stdout) — у Docker і на Render їх видно у вкладці Logs.
         builder.Services.AddSerilog((services, logger) => logger
             .ReadFrom.Configuration(builder.Configuration)
             .ReadFrom.Services(services)
@@ -32,7 +33,7 @@ public class Program
 
         // Локально (Development) нові міграції застосовуються автоматично при старті —
         // не треба після кожного git pull запускати "dotnet ef database update".
-        // На staging/production міграції застосовує CI (deploy.yml), а не застосунок.
+        // На staging/production міграції застосовує CI (deploy-staging.yml), а не застосунок.
         if (app.Environment.IsDevelopment())
         {
             using var scope = app.Services.CreateScope();
@@ -61,7 +62,12 @@ public class Program
         app.UseAuthorization();
 
         app.MapControllers();
+        // /health — API живий І база доступна (для деплою та діагностики).
         app.MapHealthChecks("/health");
+
+        // /health/live — лише "процес працює", без звернення до БД. Його пінгує UptimeRobot,
+        // щоб Render не засинав, а база Neon при цьому могла засинати й не витрачала безкоштовний ліміт.
+        app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
 
         app.Run();
     }

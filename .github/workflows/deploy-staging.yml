@@ -1,0 +1,59 @@
+# Деплой staging: push у dev → тести → міграції БД (Neon) → деплой на Render → перевірка.
+#
+# Потрібно в GitHub (Settings → Environments → staging):
+#   secrets:   STAGING_DB_CONNECTION       — рядок підключення Neon у форматі .NET (Host=...;Database=...;Username=...;Password=...;SSL Mode=Require)
+#              RENDER_STAGING_DEPLOY_HOOK  — Deploy Hook URL з Render (Settings → Deploy Hook)
+#   variables: STAGING_API_URL             — https://<сервіс>.onrender.com
+# Покрокова інструкція: docs/deployment.md
+name: Deploy staging
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # Спочатку схема БД, потім новий код — щоб новий код не стартував зі старою схемою.
+      - name: Apply EF Core migrations
+        env:
+          DB_CONNECTION: ${{ secrets.STAGING_DB_CONNECTION }}
+        run: |
+          dotnet tool restore
+          dotnet ef database update \
+            --project src/SocialNetwork.Infrastructure --startup-project src/SocialNetwork.Api \
+            --connection "$DB_CONNECTION"
+
+      - name: Trigger Render deploy
+        env:
+          DEPLOY_HOOK: ${{ secrets.RENDER_STAGING_DEPLOY_HOOK }}
+        run: curl -fsS -X POST "$DEPLOY_HOOK"
+
+      # Render збирає Docker-образ кілька хвилин. Чекаємо, поки API відповість (з перевіркою БД).
+      - name: Smoke test /health
+        env:
+          API_URL: ${{ vars.STAGING_API_URL }}
+        run: |
+          sleep 90
+          for i in $(seq 1 40); do
+            if curl -fsS "$API_URL/health"; then echo; echo "OK: $API_URL"; exit 0; fi
+            sleep 15
+          done
+          echo "API не відповідає на $API_URL/health"; exit 1

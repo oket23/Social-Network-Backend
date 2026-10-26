@@ -14,7 +14,7 @@ ASP.NET Core Web API на .NET 10, PostgreSQL, ASP.NET Core Identity + JWT.
 ```
 src/SocialNetwork.Domain          сутності (нічого не знає про інші шари)
 src/SocialNetwork.Application     сервіси, інтерфейси, Request/Response, валідатори, винятки   → Domain
-src/SocialNetwork.Infrastructure  EF Core, репозиторії, UnitOfWork, JWT, SMTP, Blob Storage     → Application
+src/SocialNetwork.Infrastructure  EF Core, репозиторії, UnitOfWork, JWT, SMTP, S3-сховище      → Application
 src/SocialNetwork.Api             контролери, middleware, фільтри, Program.cs                   → Application, Infrastructure
 tests/SocialNetwork.Tests         xUnit: Unit/ і Integration/ (Testcontainers PostgreSQL)
 ```
@@ -24,7 +24,7 @@ tests/SocialNetwork.Tests         xUnit: Unit/ і Integration/ (Testcontainers P
 ### Правила (обов'язкові)
 
 - Контролер **не** звертається до `AppDbContext`/репозиторіїв — лише до сервісу `I<Name>Service`. Контролер тонкий.
-- Application **не** посилається на EF Core, ASP.NET Core, Azure SDK. Потрібна зовнішня річ → інтерфейс у
+- Application **не** посилається на EF Core, ASP.NET Core, AWS/S3 SDK, MailKit. Потрібна зовнішня річ → інтерфейс у
   `Application/Common/Abstractions` або в модулі, реалізація — в Infrastructure.
 - Модуль не використовує **репозиторії** іншого модуля — лише його сервіс-інтерфейс.
 - Зміни зберігаються через `IUnitOfWork.SaveChangesAsync`, не через репозиторій.
@@ -33,7 +33,7 @@ tests/SocialNetwork.Tests         xUnit: Unit/ і Integration/ (Testcontainers P
   `ConflictException`, `UnauthorizedException`, `ForbiddenException`). Не повертати `null`/коди помилок, не писати try/catch у контролерах.
 - Відповіді контролерів: `Ok(new ApiSuccessResponse<T>(data, "повідомлення"))` або `Ok(new ApiSuccessResponse("повідомлення"))`.
 - Час — лише `DateTime.UtcNow`.
-- Секрети (ключі, паролі) — ніколи в коді чи `appsettings*.json`. Локально — `dotnet user-secrets`, в Azure — App Settings.
+- Секрети (ключі, паролі) — ніколи в коді чи `appsettings*.json`. Локально — `dotnet user-secrets`, на staging — змінні середовища Render і GitHub Environment secrets.
 - Застосовані на staging/prod міграції не редагувати — лише нова міграція.
 - Нові ендпоінти, що змінюють чужі дані, — перевірка власника в сервісі (403 через `ForbiddenException`).
 
@@ -68,7 +68,7 @@ tests/SocialNetwork.Tests         xUnit: Unit/ і Integration/ (Testcontainers P
 ## Команди
 
 ```bash
-docker compose up -d                                   # PostgreSQL :5432, smtp4dev :5080 (UI) / :2525, Azurite :10000
+docker compose up -d                                   # PostgreSQL :5432, smtp4dev :5080 (UI) / :2525, RustFS (S3) :9000 / консоль :9001
 dotnet build SocialNetwork.slnx
 dotnet test SocialNetwork.slnx                         # потрібен запущений Docker
 dotnet run --project src/SocialNetwork.Api             # http://localhost:5298/scalar
@@ -82,6 +82,7 @@ dotnet ef database update -p src/SocialNetwork.Infrastructure -s src/SocialNetwo
 ## Git
 
 - Гілки: `feature/<опис>` або `fix/<опис>` від актуальної `dev`; PR у `dev`; `main` — лише через PR з `dev`.
-- Push у `dev` автоматично деплоїть на staging, у `main` — на production (`.github/workflows/deploy.yml`).
+- Push у `dev` автоматично деплоїть на staging (Render + Neon, `.github/workflows/deploy-staging.yml`); production поки не налаштований.
+  Нова міграція застосується до staging-БД автоматично в цьому workflow. Деталі — [docs/deployment.md](docs/deployment.md).
 - Коміти — Conventional Commits українською: `feat: додано підписки`, `fix: ...`, `refactor: ...`, `test: ...`, `docs: ...`.
 - Не пушити напряму в `dev`/`main`, не комітити секрети й `.env`.

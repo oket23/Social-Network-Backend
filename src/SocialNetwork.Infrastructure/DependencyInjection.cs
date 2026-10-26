@@ -26,7 +26,7 @@ public static class DependencyInjection
 
         services.AddSingleton<IJwtTokenService, JwtTokenService>();
         services.AddScoped<IEmailSender, SmtpEmailSender>();
-        services.AddSingleton<IFileStorage, BlobFileStorage>();
+        services.AddSingleton<IFileStorage, S3FileStorage>();
 
         return services;
     }

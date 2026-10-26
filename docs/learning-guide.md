@@ -37,7 +37,7 @@ services.AddScoped<IEmailSender, SmtpEmailSender>();
 
 **Час життя (lifetime):**
 - `AddScoped` — один екземпляр на HTTP-запит (DbContext, репозиторії, сервіси).
-- `AddSingleton` — один на весь застосунок (`JwtTokenService`, `BlobFileStorage` — не мають стану запиту).
+- `AddSingleton` — один на весь застосунок (`JwtTokenService`, `S3FileStorage` — не мають стану запиту).
 - `AddTransient` — новий щоразу (у нас не використовується).
 
 ## 2. Repository і Unit of Work
@@ -111,7 +111,7 @@ JWT — це підписаний «пропуск»: сервер переві�
   Дозволені адреси — `Cors:AllowedOrigins`. Не використовуємо `AllowAnyOrigin` — це дірка.
 - **Секрети** (ключ JWT, паролі SMTP/БД) — ніколи в git:
   - локально — `dotnet user-secrets` (зберігаються у твоєму профілі Windows, поза репозиторієм);
-  - в Azure — App Settings (змінні середовища) і GitHub Environment secrets.
+  - на сервері — змінні середовища Render і GitHub Environment secrets (для CI).
 
   `appsettings.Development.json` містить лише рядок підключення до **локального** Docker-PostgreSQL
   з паролем `postgres` — це не секрет, він існує тільки на твоєму комп'ютері.
@@ -140,8 +140,8 @@ dotnet ef database update <НазваПопередньоїМіграції> -p 
 **Правило:** міграцію, яка вже застосована на staging/production, не редагуємо — створюємо нову.
 
 **Локально** `database update` вручну не потрібен: у Development `Program.cs` викликає `Database.Migrate()` при старті,
-тож після `git pull` з новою міграцією достатньо перезапустити API. На staging/production міграції застосовує CI
-(`deploy.yml`) окремим кроком — якщо кілька копій API стартують одночасно, автоміграція при старті може конфліктувати.
+тож після `git pull` з новою міграцією достатньо перезапустити API. На staging міграції застосовує CI
+(`deploy-staging.yml`) окремим кроком перед деплоєм — якщо кілька копій API стартують одночасно, автоміграція при старті може конфліктувати.
 
 Конфігурація таблиць — у класах `IEntityTypeConfiguration<T>` (`UserConfiguration`): довжини полів, індекси,
 зв'язки, soft delete (`HasQueryFilter(u => u.DeletedAt == null)` — «видалені» записи автоматично не потрапляють у запити).
@@ -151,10 +151,11 @@ dotnet ef database update <НазваПопередньоїМіграції> -p 
 **Навіщо:** щоб не ставити PostgreSQL, поштовий сервер і т.д. руками, і щоб у всіх було однаково.
 
 - **Образ (image)** — «шаблон» (PostgreSQL 17, наш API). **Контейнер** — запущений екземпляр образу.
-- `docker-compose.yml` описує кілька контейнерів разом: `postgres`, `smtp4dev` (ловить листи), `azurite` (емулятор
-  Azure Blob Storage). **Volume** (`postgres-data`) — дані БД переживають перезапуск контейнера.
+- `docker-compose.yml` описує кілька контейнерів разом: `postgres`, `smtp4dev` (ловить листи), `rustfs`
+  (локальне S3-сховище файлів, консоль на http://localhost:9001) і `storage-init` (одноразово створює публічний bucket `media`).
+  **Volume** (`postgres-data`, `rustfs-data`) — дані переживають перезапуск контейнера.
 - `src/SocialNetwork.Api/Dockerfile` — як зібрати образ нашого API. Багатоетапний: у великому образі SDK компілюємо,
-  у маленький runtime-образ копіюємо лише результат. Цей самий образ запускається в Azure.
+  у маленький runtime-образ копіюємо лише результат. Цей самий образ запускається на Render.
 
 ```bash
 docker compose up -d          # запустити
@@ -175,21 +176,34 @@ docker compose down -v        # зупинити і ВИДАЛИТИ дані
 dotnet test     # потрібен запущений Docker Desktop
 ```
 
-## 11. Azure
+## 11. Хостинг (Render + Neon + Supabase)
 
-| Ресурс | Навіщо |
-|---|---|
-| **Resource Group** | «папка» для всіх ресурсів проєкту (видалив групу — видалив усе) |
-| **Azure Database for PostgreSQL Flexible Server** | керована БД: Azure сам робить бекапи, оновлення, моніторинг |
-| **Storage Account (Blob)** | файли: аватари, фото, відео. Віддає їх за прямим URL |
-| **App Service Plan** | «сервер», на якому крутяться застосунки (B1 — найменший платний) |
-| **Web App (App Service)** ×2 | наш Docker-контейнер: `-staging` і `-prod`, з HTTPS на `*.azurewebsites.net` |
-| **App Settings** | змінні середовища для контейнера (рядок підключення, ключ JWT...). `Jwt__Key` = `Jwt:Key` |
-| **Application Insights** | моніторинг: запити, помилки, доступність `/health` |
+Спочатку планували Azure, але студентську підписку отримати не вдалося. Завдяки архітектурі переїзд коштував
+одного нового класу (`S3FileStorage`) і конфігурації — бізнес-логіка не змінилася.
 
-**Деплой (GitHub Actions, `.github/workflows/deploy.yml`):** push у `dev` → тести → Docker-образ у GitHub Container
-Registry → тимчасово відкриваємо firewall БД для раннера → міграції → закриваємо firewall → App Service тягне новий образ →
-перевірка `/health`. Вхід в Azure — через OIDC (federated credential), без збереження паролів у GitHub.
+**PaaS (Platform as a Service)** — ти даєш код або Docker-образ, а платформа сама запускає його, видає HTTPS-адресу,
+перезапускає при збоях. Не треба адмініструвати сервер.
+
+| Сервіс | Що робить | Навіщо саме він |
+|---|---|---|
+| **Render** | запускає наш Docker-образ (`Dockerfile`), HTTPS на `*.onrender.com` | безкоштовно без карти, деплой з GitHub |
+| **Neon** | керований PostgreSQL | безкоштовно без терміну (free БД Render видаляється через 30 днів) |
+| **Supabase Storage** | файли через **S3 API** | S3 — стандарт: той самий код працює з AWS, Cloudflare R2, RustFS |
+| **Brevo** | SMTP для листів | 300 листів/день безкоштовно |
+| **UptimeRobot** | щоп'ять хвилин відкриває `/health/live` | free-сервіс Render засинає після 15 хв без запитів; пінг не дає заснути + лист, якщо API впав |
+| **GitHub Actions** | тести, міграції, деплой, щоденний бекап | усе автоматично при push у `dev` |
+
+**Чому пінгуємо `/health/live`, а не `/health`?** `/health` перевіряє БД. Якби його смикали кожні 5 хвилин,
+Neon ніколи не засинав би й з'їв би безкоштовний ліміт обчислень. `/health/live` відповідає «я живий», не чіпаючи БД.
+
+**Infrastructure as Code:** `render.yaml` описує сервіс на Render (Docker, гілка, health check, змінні середовища)
+у файлі в git, а не кліками в дашборді — налаштування видно, їх можна переглянути в PR і відтворити.
+
+**Деплой (`.github/workflows/deploy-staging.yml`):** push у `dev` → тести → `dotnet ef database update` у Neon →
+запит на Render Deploy Hook (Render збирає `Dockerfile`) → перевірка `/health`.
+Спершу міграції, потім код — щоб новий код не стартував зі старою схемою БД.
+
+Покрокове налаштування — [deployment.md](deployment.md).
 
 ---
 
@@ -200,7 +214,6 @@ Registry → тимчасово відкриваємо firewall БД для ра
 wsl --install                          # потім перезавантажити ПК
 winget install Docker.DockerDesktop
 winget install Microsoft.DotNet.SDK.10
-winget install Microsoft.AzureCLI
 winget install GitHub.cli
 ```
 
@@ -235,7 +248,7 @@ dotnet add src/SocialNetwork.Infrastructure package Microsoft.AspNetCore.Identit
 dotnet add src/SocialNetwork.Infrastructure package Microsoft.AspNetCore.DataProtection.EntityFrameworkCore
 dotnet add src/SocialNetwork.Infrastructure package Microsoft.IdentityModel.JsonWebTokens
 dotnet add src/SocialNetwork.Infrastructure package MailKit
-dotnet add src/SocialNetwork.Infrastructure package Azure.Storage.Blobs
+dotnet add src/SocialNetwork.Infrastructure package AWSSDK.S3
 
 dotnet add src/SocialNetwork.Api package Microsoft.AspNetCore.Authentication.JwtBearer
 dotnet add src/SocialNetwork.Api package Microsoft.EntityFrameworkCore.Design
@@ -264,8 +277,8 @@ dotnet new tool-manifest && dotnet tool install dotnet-ef
 docker compose up -d
 dotnet user-secrets set "Jwt:Key" "<будь-який рядок 32+ символи>" --project src/SocialNetwork.Api   # один раз
 dotnet run --project src/SocialNetwork.Api      # міграції застосуються автоматично
-# http://localhost:5298/scalar — документація API, http://localhost:5080 — листи
+# http://localhost:5298/scalar — документація API, http://localhost:5080 — листи, http://localhost:9001 — файли
 ```
 
-### Azure
-Покрокові команди створення ресурсів будуть у `docs/azure-setup.md` (додається на етапі деплою).
+### Деплой
+Покроково (акаунти Neon, Supabase, Render, GitHub secrets, UptimeRobot) — [deployment.md](deployment.md).

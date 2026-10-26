@@ -1,0 +1,56 @@
+# Render Blueprint — опис інфраструктури як коду (Infrastructure as Code).
+# Render → New → Blueprint → вибрати цей репозиторій → Render створить сервіс за цим файлом.
+# Покрокова інструкція: docs/deployment.md
+services:
+  - type: web
+    name: socialnetwork-api-staging
+    runtime: docker
+    plan: free
+    region: frankfurt
+    branch: dev
+    dockerfilePath: ./src/SocialNetwork.Api/Dockerfile
+    dockerContext: .
+    # Render постійно перевіряє цей шлях. /health/live не звертається до БД — інакше Neon ніколи б не засинав.
+    healthCheckPath: /health/live
+    # Деплой запускає GitHub Actions (.github/workflows/deploy-staging.yml) ПІСЛЯ тестів і міграцій БД.
+    autoDeployTrigger: "off"
+    envVars:
+      # Наш Docker-образ слухає порт 8080 — кажемо Render, куди направляти трафік.
+      - key: PORT
+        value: "8080"
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Staging
+      # Документація API (/scalar) на staging — для фронтенду.
+      - key: OpenApi__Enabled
+        value: "true"
+      # Render сам згенерує випадковий секрет при створенні сервісу.
+      - key: Jwt__Key
+        generateValue: true
+
+      # sync: false — значення вводяться вручну в дашборді Render (секрети не потрапляють у git).
+      - key: ConnectionStrings__DefaultConnection
+        sync: false
+      - key: Storage__ServiceUrl
+        sync: false
+      - key: Storage__Region
+        sync: false
+      - key: Storage__AccessKey
+        sync: false
+      - key: Storage__SecretKey
+        sync: false
+      - key: Storage__PublicBaseUrl
+        sync: false
+      - key: Cors__AllowedOrigins__0
+        sync: false
+      - key: Frontend__BaseUrl
+        sync: false
+      - key: Smtp__Host
+        sync: false
+      - key: Smtp__Port
+        sync: false
+      - key: Smtp__Username
+        sync: false
+      - key: Smtp__Password
+        sync: false
+      - key: Smtp__FromEmail
+        sync: false

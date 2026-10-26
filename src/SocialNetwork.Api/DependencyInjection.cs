@@ -50,7 +50,7 @@ public static class DependencyInjection
         AddRateLimiting(services, configuration);
         AddCors(services, configuration);
 
-        // За Azure App Service запити приходять через проксі — справжні IP і схема (https) у заголовках X-Forwarded-*.
+        // На Render запити приходять через проксі — справжні IP і схема (https) у заголовках X-Forwarded-*.
         services.Configure<ForwardedHeadersOptions>(options =>
         {
             options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
