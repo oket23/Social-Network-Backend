@@ -8,7 +8,7 @@
 - **Repository + Service + Unit of Work**.
 - **Docker**: локальні залежності через `docker-compose.yml`, API — у Docker-образі.
 - **Хостинг (staging):** Render (Docker-контейнер API) + Neon (PostgreSQL) + Supabase Storage (файли, S3 API) +
-  Brevo (SMTP) + UptimeRobot (моніторинг). Production — за тим самим шаблоном пізніше. Деталі — [deployment.md](deployment.md).
+  Brevo (HTTP API для листів) + UptimeRobot (моніторинг). Production — за тим самим шаблоном пізніше. Деталі — [deployment.md](deployment.md).
 
 ## Шари
 
@@ -29,7 +29,7 @@ flowchart LR
 |---|---|---|
 | `SocialNetwork.Domain` | Сутності (`User`, `RefreshToken`), `BaseEntity`, `ISoftDeletable` | ні від чого (лише Identity-модель для `User`) |
 | `SocialNetwork.Application` | Сервіси, інтерфейси репозиторіїв і зовнішніх сервісів, Request/Response, валідатори, винятки | Domain |
-| `SocialNetwork.Infrastructure` | `AppDbContext`, конфігурації таблиць, міграції, репозиторії, `UnitOfWork`, `JwtTokenService`, `SmtpEmailSender`, `S3FileStorage` | Application |
+| `SocialNetwork.Infrastructure` | `AppDbContext`, конфігурації таблиць, міграції, репозиторії, `UnitOfWork`, `JwtTokenService`, `SmtpEmailSender` / `BrevoApiEmailSender`, `S3FileStorage` | Application |
 | `SocialNetwork.Api` | Контролери, `GlobalExceptionHandlingMiddleware`, `ValidationFilter`, JWT/CORS/rate limiting, OpenAPI | Application (+ Infrastructure для реєстрації DI) |
 
 **Головне правило:** залежності спрямовані **всередину**. Application не знає про EF Core, SMTP чи хмарні сервіси —
@@ -182,7 +182,7 @@ erDiagram
 | API | Rider / `dotnet run` (або `docker compose --profile full`) | Render, Docker-контейнер (free) | Render (за тим самим `render.yaml`) |
 | БД | PostgreSQL у Docker | Neon (окремий проєкт) | Neon (окремий проєкт) |
 | Файли | RustFS у Docker (S3) | Supabase Storage (S3), bucket `media` | Supabase Storage (S3) |
-| Пошта | smtp4dev у Docker | Brevo SMTP | Brevo SMTP |
+| Пошта | SMTP → smtp4dev у Docker | Brevo HTTP API (SMTP на Render free заблокований) | Brevo HTTP API |
 | Секрети | `dotnet user-secrets` | змінні Render + GitHub Environment `staging` | змінні Render + GitHub Environment `production` |
 | Документація API | `/scalar` | `/scalar` (`OpenApi__Enabled=true`) | вимкнено |
 
