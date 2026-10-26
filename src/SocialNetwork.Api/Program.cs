@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 using Serilog;
+using Serilog.Events;
 using SocialNetwork.Api.Middlewares;
 using SocialNetwork.Api.OpenApi;
 using SocialNetwork.Application;
@@ -42,7 +43,7 @@ public class Program
 
         app.UseForwardedHeaders();
         app.UseMiddleware<GlobalExceptionHandlingMiddleware>();
-        app.UseSerilogRequestLogging();
+        app.UseSerilogRequestLogging(options => options.GetLevel = GetRequestLogLevel);
 
         // Документація API: /openapi/v1.json і UI на /scalar. На staging теж увімкнено (OpenApi:Enabled).
         if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("OpenApi:Enabled"))
@@ -51,6 +52,9 @@ public class Program
             app.MapScalarApiReference(options => options
                 .WithTitle("Social Network API")
                 .AddPreferredSecuritySchemes(BearerSecuritySchemeTransformer.SchemeName));
+
+            // Відкрив адресу API в браузері — одразу потрапив у документацію, а не на 404.
+            app.MapGet("/", () => Results.Redirect("/scalar")).ExcludeFromDescription();
         }
 
         app.UseHttpsRedirection();
@@ -70,5 +74,22 @@ public class Program
         app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
 
         app.Run();
+    }
+
+    /// <summary>
+    /// Рівень логу для кожного HTTP-запиту. Успішні перевірки /health* (Render кожні ~5 с, UptimeRobot кожні 5 хв)
+    /// пишемо на рівні Verbose — він нижчий за мінімальний Information, тож у логи вони не потрапляють
+    /// і не "топлять" справжні запити. Помилки (у т.ч. health) — завжди видно.
+    /// </summary>
+    private static LogEventLevel GetRequestLogLevel(HttpContext context, double elapsedMs, Exception? exception)
+    {
+        if (exception is not null || context.Response.StatusCode >= StatusCodes.Status500InternalServerError)
+        {
+            return LogEventLevel.Error;
+        }
+
+        return context.Request.Path.StartsWithSegments("/health")
+            ? LogEventLevel.Verbose
+            : LogEventLevel.Information;
     }
 }
