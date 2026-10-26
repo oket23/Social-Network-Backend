@@ -112,12 +112,17 @@ UptimeRobot ──кожні 5 хв──► /health/live
 1. https://uptimerobot.com → Sign up.
 2. **Add New Monitor:** тип **HTTP(s)**, URL `https://<сервіс>.onrender.com/health/live`, інтервал **5 minutes**.
 3. Alert contact — ваш email (лист, якщо API впав).
-4. (Опційно) **Status Pages** → публічна сторінка доступності — можна дати команді/ментору.
+4. **Status Pages → Create** → додати монітор → публічна сторінка доступності з історією інцидентів.
+   Наша: **https://stats.uptimerobot.com/QX76uZtgtw** (посилання в README і в описі репозиторію на GitHub).
+
+Успішні перевірки `/health*` не пишуться в логи застосунку (рівень Verbose у `Program.cs` → `GetRequestLogLevel`),
+щоб у Render → Logs було видно справжні запити. Якщо health-перевірка падає з помилкою — вона в логах буде.
 
 ## Крок 8. Дати API фронтенду
 
-- **Base URL:** `https://<сервіс>.onrender.com`
+- **Base URL:** `https://socialnetwork-api-staging.onrender.com` (відкриття адреси перенаправляє на документацію)
 - **Документація:** `/scalar`, специфікація для генерації типів: `/openapi/v1.json`
+- **Статус:** https://stats.uptimerobot.com/QX76uZtgtw
 - Адресу фронтенду додати в Render → Environment → `Cors__AllowedOrigins__0` (ще адреси — `__1`, `__2`...) → Save (Render перезапустить сервіс).
 - Формат відповідей і авторизація — див. розділ «API» в [README](../README.md#api).
 

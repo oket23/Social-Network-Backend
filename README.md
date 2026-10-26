@@ -3,7 +3,13 @@
 Backend навчального клону Instagram: REST API на **ASP.NET Core (.NET 10)**, **PostgreSQL**,
 **ASP.NET Core Identity + JWT**, Docker. Staging розгорнуто на Render.
 
-- **API для фронтенду (staging):** `https://<сервіс>.onrender.com` — документація `/scalar`, специфікація `/openapi/v1.json`
+| Середовище | Адреса |
+|---|---|
+| **API (staging)** | https://socialnetwork-api-staging.onrender.com |
+| **Документація API** | https://socialnetwork-api-staging.onrender.com/scalar · специфікація [`/openapi/v1.json`](https://socialnetwork-api-staging.onrender.com/openapi/v1.json) |
+| **Статус і доступність** | https://stats.uptimerobot.com/QX76uZtgtw |
+
+
 - Деплой і налаштування сервісів: [docs/deployment.md](docs/deployment.md)
 - Архітектура (модульний моноліт, Clean Architecture): [docs/architecture.md](docs/architecture.md)
 - Пояснення кожного рішення і як повторити з нуля: [docs/learning-guide.md](docs/learning-guide.md)
@@ -94,6 +100,7 @@ dotnet run --project src/SocialNetwork.Api
 | POST | `/users/me/avatar` | Bearer | аватар (multipart, поле `file`, JPEG/PNG/WEBP ≤ 5 МБ) |
 | GET | `/health` | — | стан API і БД |
 | GET | `/health/live` | — | лише «API живий», без БД (для пінгу UptimeRobot) |
+| GET | `/` | — | перенаправляє на `/scalar` (де документація увімкнена) |
 
 Rate limiting: 5 запитів/хв з однієї IP на `register`, `login`, `forgot-password`, `reset-password` (відповідь `429`).
 
