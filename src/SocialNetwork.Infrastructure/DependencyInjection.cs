@@ -25,10 +25,24 @@ public static class DependencyInjection
         AddIdentity(services);
 
         services.AddSingleton<IJwtTokenService, JwtTokenService>();
-        services.AddScoped<IEmailSender, SmtpEmailSender>();
         services.AddSingleton<IFileStorage, S3FileStorage>();
+        AddEmail(services, configuration);
 
         return services;
+    }
+
+    private static void AddEmail(IServiceCollection services, IConfiguration configuration)
+    {
+        // Задано Brevo:ApiKey → листи через HTTP API Brevo (staging на Render, де SMTP-порти заблоковані).
+        // Інакше → SMTP (локально smtp4dev). Сервіси бачать лише IEmailSender і не знають, який варіант працює.
+        if (!string.IsNullOrWhiteSpace(configuration[$"{BrevoSettings.SectionName}:ApiKey"]))
+        {
+            services.AddHttpClient<IEmailSender, BrevoApiEmailSender>(client => client.Timeout = TimeSpan.FromSeconds(10));
+        }
+        else
+        {
+            services.AddScoped<IEmailSender, SmtpEmailSender>();
+        }
     }
 
     private static void AddSettings(IServiceCollection services, IConfiguration configuration)
@@ -43,6 +57,7 @@ public static class DependencyInjection
 
         services.Configure<FrontendSettings>(configuration.GetSection(FrontendSettings.SectionName));
         services.Configure<SmtpSettings>(configuration.GetSection(SmtpSettings.SectionName));
+        services.Configure<BrevoSettings>(configuration.GetSection(BrevoSettings.SectionName));
         services.Configure<StorageSettings>(configuration.GetSection(StorageSettings.SectionName));
     }
 

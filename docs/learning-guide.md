@@ -23,17 +23,22 @@
 | **Domain** | самі продукти | сутності `User`, `RefreshToken` |
 
 **Ключова ідея — інверсія залежностей.** Application каже: «мені потрібен хтось, хто вміє `SendAsync(email)`» —
-це інтерфейс `IEmailSender` (лежить в Application). Infrastructure реалізує його через SMTP (`SmtpEmailSender`).
-У тестах ми підставляємо `FakeEmailSender`. Сервіс навіть не знає, що є різні реалізації.
+це інтерфейс `IEmailSender` (лежить в Application). Infrastructure має **дві** реалізації: `SmtpEmailSender`
+(локально, через smtp4dev) і `BrevoApiEmailSender` (на Render, де SMTP-порти заблоковані — листи йдуть HTTPS-запитом).
+У тестах ми підставляємо `FakeEmailSender`. `AuthService` навіть не знає, яка реалізація працює.
+
+Живий приклад, навіщо це: коли з'ясувалося, що Render free блокує SMTP, ми додали один новий клас в Infrastructure
+і один `if` у реєстрації DI — жодного рядка в бізнес-логіці реєстрації чи скидання пароля не змінилося.
 
 Хто з ким з'єднує інтерфейс і реалізацію? **DI-контейнер** (Dependency Injection):
 
 ```csharp
 // Infrastructure/DependencyInjection.cs
-services.AddScoped<IEmailSender, SmtpEmailSender>();
+if (є Brevo:ApiKey) services.AddHttpClient<IEmailSender, BrevoApiEmailSender>();
+else                 services.AddScoped<IEmailSender, SmtpEmailSender>();
 ```
 
-і далі будь-який клас, що просить `IEmailSender` у конструкторі, отримає `SmtpEmailSender`.
+і далі будь-який клас, що просить `IEmailSender` у конструкторі, отримає потрібну реалізацію.
 
 **Час життя (lifetime):**
 - `AddScoped` — один екземпляр на HTTP-запит (DbContext, репозиторії, сервіси).
@@ -189,7 +194,7 @@ dotnet test     # потрібен запущений Docker Desktop
 | **Render** | запускає наш Docker-образ (`Dockerfile`), HTTPS на `*.onrender.com` | безкоштовно без карти, деплой з GitHub |
 | **Neon** | керований PostgreSQL | безкоштовно без терміну (free БД Render видаляється через 30 днів) |
 | **Supabase Storage** | файли через **S3 API** | S3 — стандарт: той самий код працює з AWS, Cloudflare R2, RustFS |
-| **Brevo** | SMTP для листів | 300 листів/день безкоштовно |
+| **Brevo** | відправка листів через HTTP API | 300 листів/день безкоштовно; SMTP на Render free заблокований, а HTTPS — ні |
 | **UptimeRobot** | щоп'ять хвилин відкриває `/health/live` | free-сервіс Render засинає після 15 хв без запитів; пінг не дає заснути + лист, якщо API впав |
 | **GitHub Actions** | тести, міграції, деплой, щоденний бекап | усе автоматично при push у `dev` |
 

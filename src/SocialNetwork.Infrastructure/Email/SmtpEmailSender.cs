@@ -23,7 +23,9 @@ public class SmtpEmailSender : IEmailSender
         message.Subject = subject;
         message.Body = new BodyBuilder { HtmlBody = htmlBody }.ToMessageBody();
 
-        using var client = new SmtpClient();
+        // 10 с замість ~2 хв за замовчуванням: якщо SMTP недоступний (наприклад, порт заблокований хостингом),
+        // запит користувача (реєстрація, forgot-password) не висітиме.
+        using var client = new SmtpClient { Timeout = 10_000 };
         await client.ConnectAsync(_settings.Host, _settings.Port, Enum.Parse<SecureSocketOptions>(_settings.Security, true), ct);
 
         if (!string.IsNullOrEmpty(_settings.Username))

@@ -44,13 +44,8 @@ services:
         sync: false
       - key: Frontend__BaseUrl
         sync: false
-      - key: Smtp__Host
+      # Пошта — через HTTP API Brevo: Render free блокує SMTP-порти (25/465/587), тож Smtp__* тут не працюють.
+      - key: Brevo__ApiKey
         sync: false
-      - key: Smtp__Port
-        sync: false
-      - key: Smtp__Username
-        sync: false
-      - key: Smtp__Password
-        sync: false
-      - key: Smtp__FromEmail
+      - key: Brevo__FromEmail
         sync: false

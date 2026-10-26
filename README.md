@@ -18,7 +18,7 @@ Backend навчального клону Instagram: REST API на **ASP.NET Cor
 | Авторизація | ASP.NET Core Identity, JWT access (15 хв) + refresh (7 днів, ротація) |
 | Валідація | FluentValidation |
 | Файли | S3-сумісне сховище: Supabase Storage (локально RustFS) |
-| Пошта | SMTP через MailKit: Brevo (локально smtp4dev) |
+| Пошта | Brevo HTTP API на staging; локально SMTP (MailKit) → smtp4dev |
 | Логи | Serilog |
 | Тести | xUnit, WebApplicationFactory, Testcontainers |
 | Інфраструктура | Docker, GitHub Actions, Render (API), Neon (PostgreSQL), UptimeRobot (моніторинг) |
@@ -111,7 +111,8 @@ Rate limiting: 5 запитів/хв з однієї IP на `register`, `login`
 | `ConnectionStrings:DefaultConnection` | рядок підключення PostgreSQL | Dev: `appsettings.Development.json` (локальний Docker); staging: Render (Neon) |
 | `Jwt:Key` | секрет підпису JWT (≥ 32 символи) | Dev: user-secrets; staging: Render (генерується) |
 | `Jwt:AccessTokenMinutes`, `Jwt:RefreshTokenDays` | терміни дії токенів | `appsettings.json` |
-| `Smtp:*` | Host, Port, Security (None/StartTls/...), Username, Password, FromEmail | Dev: smtp4dev; staging: Render (Brevo) |
+| `Smtp:*` | Host, Port, Security (None/StartTls/...), Username, Password, FromEmail — відправка через SMTP | Dev: smtp4dev |
+| `Brevo:ApiKey`, `Brevo:FromEmail` | відправка через HTTP API Brevo; якщо `ApiKey` задано — замість SMTP (Render free блокує SMTP) | staging: Render |
 | `Storage:*` | ServiceUrl, Region, AccessKey, SecretKey, BucketName, PublicBaseUrl — S3-сховище | Dev: RustFS; staging: Render (Supabase) |
 | `Frontend:BaseUrl` | адреса фронту для посилань у листах | Render |
 | `Cors:AllowedOrigins` | дозволені адреси фронту | Render (`Cors__AllowedOrigins__0=...`) |

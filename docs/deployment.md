@@ -10,7 +10,7 @@ Production (гілка `main`) додається за тим самим шаб�
 | **Render** | запускає наш Docker-образ API, дає HTTPS-адресу `*.onrender.com` | Rider / `docker compose --profile full` |
 | **Neon** | PostgreSQL | `postgres` у Docker |
 | **Supabase Storage** | файли (аватари, далі фото/відео) через S3 API | `rustfs` у Docker |
-| **Brevo** | відправка листів (SMTP) | `smtp4dev` у Docker |
+| **Brevo** | відправка листів через HTTP API | `smtp4dev` у Docker (SMTP) |
 | **UptimeRobot** | пінгує `/health/live` кожні 5 хв, щоб Render не засинав + повідомляє, якщо API впав | — |
 | **GitHub Actions** | тести → міграції БД → деплой → щоденний бекап | — |
 
@@ -28,7 +28,9 @@ UptimeRobot ──кожні 5 хв──► /health/live
 - **Neon free:** ~0.5–1 GB на проєкт, обмежені години обчислень; засинає після 5 хв без запитів і прокидається за секунди.
   Тому UptimeRobot пінгує `/health/live` (без БД), а не `/health`.
 - **Supabase free:** 1 GB файлів. **Проєкт ставиться на паузу після тижня неактивності** — тоді в дашборді Supabase натиснути «Restore».
-- **Brevo free:** 300 листів на день.
+- **Brevo free:** 300 листів на день. Відправник з Gmail-адресою (без власного домену) — листи можуть потрапляти в «Спам».
+- **Render free блокує вихідний SMTP** (порти 25/465/587, з вересня 2025). Тому на staging листи йдуть через
+  **HTTP API Brevo** (`Brevo__ApiKey`), а не через SMTP. Локально — як і раніше SMTP (smtp4dev).
 
 ---
 
@@ -58,11 +60,14 @@ UptimeRobot ──кожні 5 хв──► /health/live
 
 Без цього кроку API працює, просто листи не відправляються (помилка лише пишеться в лог).
 
-1. https://www.brevo.com → Sign up.
-2. **Senders, Domains & Dedicated IPs → Senders → Add a sender** — ваш email, підтвердити за листом.
-3. **SMTP & API → SMTP → Generate a new SMTP key**.
-4. Значення: `Smtp__Host` = `smtp-relay.brevo.com`, `Smtp__Port` = `587`,
-   `Smtp__Username` = SMTP login (на тій самій сторінці), `Smtp__Password` = SMTP key, `Smtp__FromEmail` = підтверджений sender.
+1. https://www.brevo.com → Sign up → **підтвердити телефон** (банер угорі; без цього Brevo нічого не відправляє).
+2. ⚙️ → **Senders, Domains & Dedicated IPs → Senders → Add a sender** — email проєкту
+   («Add this sender anyway» на попередженні про безкоштовну пошту), підтвердити за листом.
+3. Меню акаунта → **SMTP & API → API keys → Generate a new API key** (саме **API key**, не SMTP key).
+4. Значення для Render: `Brevo__ApiKey` = API key, `Brevo__FromEmail` = підтверджений sender.
+
+Як це працює в коді: якщо задано `Brevo:ApiKey`, `Infrastructure/DependencyInjection.cs` реєструє
+`BrevoApiEmailSender` (HTTPS-запит до `api.brevo.com`), інакше — `SmtpEmailSender`. Сервіси бачать лише `IEmailSender`.
 
 ## Крок 4. Render (API)
 
@@ -77,7 +82,7 @@ UptimeRobot ──кожні 5 хв──► /health/live
    | `Storage__ServiceUrl`, `Storage__Region`, `Storage__AccessKey`, `Storage__SecretKey`, `Storage__PublicBaseUrl` | з кроку 2 |
    | `Cors__AllowedOrigins__0` | адреса фронтенду (напр. `https://our-front.vercel.app`); поки немає — `http://localhost:3000` |
    | `Frontend__BaseUrl` | та сама адреса фронтенду (для посилань у листах) |
-   | `Smtp__*` | з кроку 3 (якщо поле не можна лишити порожнім — тимчасово `-`) |
+   | `Brevo__ApiKey`, `Brevo__FromEmail` | з кроку 3 |
 
    `Jwt__Key` Render згенерує сам; `PORT`, `ASPNETCORE_ENVIRONMENT`, `OpenApi__Enabled` уже задані в `render.yaml`.
 4. **Apply** → Render створить сервіс. Адреса буде у верхній частині сторінки сервісу (`https://socialnetwork-api-staging.onrender.com`
@@ -151,7 +156,8 @@ UptimeRobot ──кожні 5 хв──► /health/live
 | `/health` = Unhealthy | `ConnectionStrings__DefaultConnection` у Render; чи не вичерпано ліміт Neon |
 | Аватар: 500 або URL не відкривається | змінні `Storage__*`; bucket `media` публічний; проєкт Supabase не на паузі |
 | Фронт: CORS error у браузері | адреса фронту в `Cors__AllowedOrigins__0` точно збігається (схема, домен, порт, без `/` в кінці) |
-| Листи не приходять | `Smtp__*`, sender підтверджений у Brevo; помилка буде в логах Render |
+| Листи не приходять | перевірити «Спам»; `Brevo__ApiKey` (API key, не SMTP key) і `Brevo__FromEmail` (підтверджений sender); телефон у Brevo підтверджено; у логах Render — «Не вдалося надіслати лист» з текстом помилки Brevo |
+| Реєстрація «висить» ~10 с | не задано `Brevo__ApiKey` → API пробує SMTP, а Render free його блокує |
 | Перший запит дуже довгий | сервіс заснув — перевірити монітор UptimeRobot |
 
 ## Production пізніше
