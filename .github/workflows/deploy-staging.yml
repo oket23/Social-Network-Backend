@@ -37,6 +37,8 @@ jobs:
           DB_CONNECTION: ${{ secrets.STAGING_DB_CONNECTION }}
         run: |
           dotnet tool restore
+          # Цей job стартує на чистій машині (тести були в окремому job) — dotnet-ef потребує відновлених пакетів.
+          dotnet restore SocialNetwork.slnx
           dotnet ef database update \
             --project src/SocialNetwork.Infrastructure --startup-project src/SocialNetwork.Api \
             --connection "$DB_CONNECTION"
