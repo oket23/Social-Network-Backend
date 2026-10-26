@@ -33,7 +33,7 @@ public class Program
 
         // Локально (Development) нові міграції застосовуються автоматично при старті —
         // не треба після кожного git pull запускати "dotnet ef database update".
-        // На staging/production міграції застосовує CI (deploy.yml), а не застосунок.
+        // На staging/production міграції застосовує CI (deploy-staging.yml), а не застосунок.
         if (app.Environment.IsDevelopment())
         {
             using var scope = app.Services.CreateScope();

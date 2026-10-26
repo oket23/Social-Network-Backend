@@ -7,7 +7,8 @@
 - **PostgreSQL** (EF Core + Npgsql, міграції), **ASP.NET Core Identity** + **JWT** (access + refresh).
 - **Repository + Service + Unit of Work**.
 - **Docker**: локальні залежності через `docker-compose.yml`, API — у Docker-образі.
-- **Azure**: App Service (контейнер) + Azure Database for PostgreSQL + Blob Storage; staging і production окремо.
+- **Хостинг (staging):** Render (Docker-контейнер API) + Neon (PostgreSQL) + Supabase Storage (файли, S3 API) +
+  Brevo (SMTP) + UptimeRobot (моніторинг). Production — за тим самим шаблоном пізніше. Деталі — [deployment.md](deployment.md).
 
 ## Шари
 
@@ -16,7 +17,7 @@ flowchart LR
     Api["<b>Api</b><br/>контролери, middleware,<br/>фільтри, Program.cs"]
     App["<b>Application</b><br/>сервіси (бізнес-логіка),<br/>DTO, валідатори, інтерфейси"]
     Dom["<b>Domain</b><br/>сутності<br/>(User, RefreshToken...)"]
-    Inf["<b>Infrastructure</b><br/>EF Core, репозиторії, UoW,<br/>JWT, SMTP, Blob Storage"]
+    Inf["<b>Infrastructure</b><br/>EF Core, репозиторії, UoW,<br/>JWT, SMTP, S3-сховище"]
 
     Api --> App
     Api -. "лише для DI" .-> Inf
@@ -28,12 +29,13 @@ flowchart LR
 |---|---|---|
 | `SocialNetwork.Domain` | Сутності (`User`, `RefreshToken`), `BaseEntity`, `ISoftDeletable` | ні від чого (лише Identity-модель для `User`) |
 | `SocialNetwork.Application` | Сервіси, інтерфейси репозиторіїв і зовнішніх сервісів, Request/Response, валідатори, винятки | Domain |
-| `SocialNetwork.Infrastructure` | `AppDbContext`, конфігурації таблиць, міграції, репозиторії, `UnitOfWork`, `JwtTokenService`, `SmtpEmailSender`, `BlobFileStorage` | Application |
+| `SocialNetwork.Infrastructure` | `AppDbContext`, конфігурації таблиць, міграції, репозиторії, `UnitOfWork`, `JwtTokenService`, `SmtpEmailSender`, `S3FileStorage` | Application |
 | `SocialNetwork.Api` | Контролери, `GlobalExceptionHandlingMiddleware`, `ValidationFilter`, JWT/CORS/rate limiting, OpenAPI | Application (+ Infrastructure для реєстрації DI) |
 
-**Головне правило:** залежності спрямовані **всередину**. Application не знає про EF Core, SMTP чи Azure —
+**Головне правило:** залежності спрямовані **всередину**. Application не знає про EF Core, SMTP чи хмарні сервіси —
 лише про інтерфейси (`IUserRepository`, `IEmailSender`, `IFileStorage`). Тому їх легко підмінити в тестах
-і замінити реалізацію (наприклад, SMTP → SendGrid) без змін бізнес-логіки.
+і замінити реалізацію без змін бізнес-логіки. Приклад з життя проєкту: сховище файлів перейшло з Azure Blob
+на S3 (Supabase) — змінився лише один клас в Infrastructure (`S3FileStorage`) і конфігурація.
 
 > Компроміс: `User` наслідує `IdentityUser<Guid>`, а сервіси використовують `UserManager<User>`.
 > Це додає Domain/Application залежність від пакета `Microsoft.Extensions.Identity.Stores`,
@@ -64,7 +66,7 @@ Notifications, Explore/Search, Settings.
 | Стрічка, Explore, лічильники (дані з багатьох модулів) | ✅ один SQL-запит з JOIN | ❌ кілька HTTP-викликів між сервісами + агрегація |
 | Транзакції (напр. «прийняти запит на підписку + сповіщення») | ✅ звичайна транзакція БД | ❌ saga / outbox |
 | Інфраструктура | ✅ API + PostgreSQL | ❌ + API gateway, брокер (RabbitMQ), розподілене трасування |
-| Вартість Azure (студентський кредит) | ✅ 1 App Service + 1 БД | ❌ ресурс на кожен сервіс |
+| Вартість хостингу (безкоштовні тарифи) | ✅ 1 сервіс + 1 БД — вкладаємося у free | ❌ ресурс на кожен сервіс — free-лімітів не вистачить |
 | Дебаг, тести, навчання | ✅ один процес | ❌ треба піднімати всі сервіси |
 | Незалежне масштабування частин | ❌ масштабується цілком | ✅ |
 | Ізоляція збоїв | ❌ збій модуля може покласти API | ✅ |
@@ -176,36 +178,35 @@ erDiagram
 
 | | Local | Staging | Production |
 |---|---|---|---|
-| Гілка | будь-яка | `dev` | `main` |
-| API | Rider / `dotnet run` (або `docker compose --profile full`) | Azure App Service (контейнер) | Azure App Service (контейнер) |
-| БД | PostgreSQL у Docker | Azure Database for PostgreSQL | Azure Database for PostgreSQL |
-| Файли | Azurite у Docker | Azure Blob Storage | Azure Blob Storage |
-| Пошта | smtp4dev у Docker | SMTP (Brevo/Gmail) | SMTP (Brevo/Gmail) |
-| Секрети | `dotnet user-secrets` | App Settings + GitHub Environment secrets | App Settings + GitHub Environment secrets |
+| Гілка | будь-яка | `dev` | `main` (ще не налаштовано) |
+| API | Rider / `dotnet run` (або `docker compose --profile full`) | Render, Docker-контейнер (free) | Render (за тим самим `render.yaml`) |
+| БД | PostgreSQL у Docker | Neon (окремий проєкт) | Neon (окремий проєкт) |
+| Файли | RustFS у Docker (S3) | Supabase Storage (S3), bucket `media` | Supabase Storage (S3) |
+| Пошта | smtp4dev у Docker | Brevo SMTP | Brevo SMTP |
+| Секрети | `dotnet user-secrets` | змінні Render + GitHub Environment `staging` | змінні Render + GitHub Environment `production` |
 | Документація API | `/scalar` | `/scalar` (`OpenApi__Enabled=true`) | вимкнено |
 
-**CI/CD (GitHub Actions):** `ci.yml` — збірка і тести на кожен PR; `deploy.yml` — на push у `dev`/`main`:
-тести → Docker-образ у GitHub Container Registry → міграції БД → оновлення App Service → перевірка `/health`.
+**CI/CD (GitHub Actions):** `ci.yml` — збірка і тести на кожен PR; `deploy-staging.yml` — на push у `dev`:
+тести → міграції БД (Neon) → Render Deploy Hook (Render збирає `Dockerfile`) → перевірка `/health`.
+Інфраструктура сервісу описана кодом у `render.yaml` (Render Blueprint). Покроково — [deployment.md](deployment.md).
 
 ## Резервне копіювання та відновлення
 
-- Azure Database for PostgreSQL Flexible Server робить **автоматичні бекапи** (зберігання 7 днів) і дозволяє
-  відновити БД на будь-який момент часу (point-in-time restore):
+- **Щоденний дамп:** `.github/workflows/backup.yml` о 03:00 UTC робить `pg_dump` staging-БД і зберігає його
+  як GitHub artifact 14 днів (scheduled-запуски працюють з гілки `main`).
+- **Neon** додатково дозволяє відновити БД на момент у недалекому минулому (глибина історії залежить від тарифу).
+- **Відновлення з дампу:**
   ```bash
-  az postgres flexible-server restore \
-    --resource-group <rg> --name <new-server-name> \
-    --source-server <server-name> --restore-time "2026-10-20T12:00:00Z"
+  docker run --rm -v "$PWD:/backup" postgres:17 \
+    pg_restore --clean --if-exists --no-owner -d "<STAGING_DB_URL>" /backup/staging-<дата>.dump
   ```
-  Після відновлення — змінити `ConnectionStrings__DefaultConnection` у App Settings на новий сервер.
-- Ручний дамп (наприклад, перед ризикованою міграцією):
-  ```bash
-  pg_dump "host=<server>.postgres.database.azure.com dbname=socialnetwork user=<admin> sslmode=require" -Fc -f backup.dump
-  pg_restore -d "<connection>" --clean backup.dump
-  ```
-- Файли в Blob Storage: за потреби вмикається soft delete для blob-ів (відновлення видалених файлів).
+  Деталі — [deployment.md](deployment.md#бекап-і-відновлення).
 
 ## Моніторинг і логи
 
-- `GET /health` — перевіряє, що API живий і БД доступна (використовується в деплої та availability-тесті).
-- Логи — Serilog у stdout: локально в консолі, в Azure — App Service **Log stream** (`az webapp log tail`).
+- `GET /health` — API живий **і** БД доступна (перевірка після деплою).
+- `GET /health/live` — лише «процес працює», без БД. Його перевіряє Render (health check) і пінгує **UptimeRobot**
+  кожні 5 хв: free-сервіс Render не засинає, а БД Neon може засинати й не витрачає безкоштовний ліміт обчислень.
+  UptimeRobot також надсилає лист, якщо API недоступний.
+- Логи — Serilog у stdout: локально в консолі, на Render — вкладка **Logs** сервісу.
 - Необроблені помилки логуються з `traceId`; клієнт у production бачить лише «Внутрішня помилка сервера» + `traceId`.

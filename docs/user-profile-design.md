@@ -12,7 +12,7 @@
 | displayName (ім'я) | display_name | string(50) | так | так | |
 | bio | bio | string(160) | ні | так | |
 | websiteUrl | website_url | string(200) | ні | так | лише http/https URL |
-| avatarUrl | avatar_url | string(500) | ні | ні (`POST /users/me/avatar`) | URL у Blob Storage |
+| avatarUrl | avatar_url | string(500) | ні | ні (`POST /users/me/avatar`) | URL у S3-сховищі (Supabase Storage / локально RustFS) |
 | isPrivate | is_private | bool | так (default `false`) | так | |
 | createdAt | created_at | timestamptz | так (ставиться сервером) | ні | UTC |
 | — | deleted_at | timestamptz | ні | ні | soft delete |
