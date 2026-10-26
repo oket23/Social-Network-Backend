@@ -1,7 +1,7 @@
 namespace SocialNetwork.Application.Auth;
 
 /// <summary>
-/// Налаштування JWT (секція "Jwt"). Key — секрет, зберігається в User Secrets / App Settings Azure, не в репозиторії.
+/// Налаштування JWT (секція "Jwt"). Key — секрет, зберігається в User Secrets / змінних середовища Render, не в репозиторії.
 /// </summary>
 public class JwtSettings
 {

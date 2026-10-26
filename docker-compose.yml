@@ -27,14 +27,38 @@ services:
       - "5080:80"
       - "2525:25"
 
-  # Емулятор Azure Blob Storage (аватари, фото, відео)
-  azurite:
-    image: mcr.microsoft.com/azure-storage/azurite
-    command: azurite-blob --blobHost 0.0.0.0 --loose --skipApiVersionCheck
+  # Локальне S3-сумісне сховище файлів (аватари, фото, відео) — замінник Supabase Storage.
+  # S3 API — http://localhost:9000, веб-консоль — http://localhost:9001
+  rustfs:
+    image: rustfs/rustfs:latest
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-devaccess}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-devsecret123}
+      RUSTFS_CONSOLE_ENABLE: "true"
     ports:
-      - "10000:10000"
+      - "9000:9000"
+      - "9001:9001"
     volumes:
-      - azurite-data:/data
+      - rustfs-data:/data
+
+  # Одноразово створює bucket "media" і дозволяє читати файли без авторизації (як public bucket у Supabase).
+  storage-init:
+    image: amazon/aws-cli:latest
+    depends_on:
+      - rustfs
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-devaccess}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-devsecret123}
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        S3="aws --endpoint-url http://rustfs:9000 s3api"
+        until $$S3 list-buckets > /dev/null 2>&1; do echo "Чекаю RustFS..."; sleep 1; done
+        $$S3 head-bucket --bucket media 2>/dev/null || $$S3 create-bucket --bucket media
+        $$S3 put-bucket-policy --bucket media --policy '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":"*","Action":["s3:GetObject"],"Resource":["arn:aws:s3:::media/*"]}]}'
+        echo "Bucket media готовий"
+    restart: "no"
 
   api:
     profiles: ["full"]
@@ -48,9 +72,11 @@ services:
       Jwt__Key: ${JWT_KEY:-}
       Smtp__Host: smtp4dev
       Smtp__Port: 25
-      # Стандартний (публічно відомий) ключ емулятора Azurite — не секрет.
-      # host.docker.internal доступний і з контейнера, і з браузера (Docker Desktop), тож URL аватарів відкриються.
-      Storage__ConnectionString: DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://host.docker.internal:10000/devstoreaccount1;
+      # API звертається до сховища всередині Docker-мережі, а браузер відкриває файли через localhost.
+      Storage__ServiceUrl: http://rustfs:9000
+      Storage__AccessKey: ${S3_ACCESS_KEY:-devaccess}
+      Storage__SecretKey: ${S3_SECRET_KEY:-devsecret123}
+      Storage__PublicBaseUrl: http://localhost:9000/media
     ports:
       - "8080:8080"
     depends_on:
@@ -59,4 +85,4 @@ services:
 
 volumes:
   postgres-data:
-  azurite-data:
+  rustfs-data:

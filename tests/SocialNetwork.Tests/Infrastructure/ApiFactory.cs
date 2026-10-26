@@ -13,7 +13,7 @@ namespace SocialNetwork.Tests.Infrastructure;
 
 /// <summary>
 /// Піднімає справжній API в пам'яті + справжній PostgreSQL у Docker-контейнері (Testcontainers).
-/// Пошта й файлове сховище підмінені фейками, щоб тести не залежали від smtp4dev/Azurite.
+/// Пошта й файлове сховище підмінені фейками, щоб тести не залежали від smtp4dev/MinIO.
 /// </summary>
 public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {

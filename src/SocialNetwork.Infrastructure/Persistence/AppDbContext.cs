@@ -10,7 +10,7 @@ namespace SocialNetwork.Infrastructure.Persistence;
 /// <summary>
 /// IdentityDbContext уже містить таблиці Identity (users, roles, user_claims...).
 /// IDataProtectionKeyContext — ключі для токенів email/скидання пароля зберігаються в БД,
-/// тож вони не губляться після перезапуску контейнера в Azure.
+/// тож вони не губляться після перезапуску контейнера на сервері.
 /// </summary>
 public class AppDbContext : IdentityDbContext<User, IdentityRole<Guid>, Guid>, IDataProtectionKeyContext
 {
