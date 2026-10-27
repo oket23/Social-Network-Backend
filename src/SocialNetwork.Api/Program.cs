@@ -42,8 +42,10 @@ public class Program
         }
 
         app.UseForwardedHeaders();
-        app.UseMiddleware<GlobalExceptionHandlingMiddleware>();
+        // Порядок важливий: логування запитів стоїть ЗОВНІ обробника помилок, тому бачить фінальний статус
+        // (наприклад, 400 для помилки валідації), а не "сирий" виняток, який Serilog записав би як 500.
         app.UseSerilogRequestLogging(options => options.GetLevel = GetRequestLogLevel);
+        app.UseMiddleware<GlobalExceptionHandlingMiddleware>();
 
         // Документація API: /openapi/v1.json і UI на /scalar. На staging теж увімкнено (OpenApi:Enabled).
         if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("OpenApi:Enabled"))
