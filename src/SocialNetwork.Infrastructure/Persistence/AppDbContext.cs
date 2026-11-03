@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using SocialNetwork.Domain.Auth;
+using SocialNetwork.Domain.Posts;
 using SocialNetwork.Domain.Users;
 
 namespace SocialNetwork.Infrastructure.Persistence;
@@ -19,6 +20,10 @@ public class AppDbContext : IdentityDbContext<User, IdentityRole<Guid>, Guid>, I
     }
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
+    public DbSet<Post> Posts => Set<Post>();
+
+    public DbSet<PostMedia> PostMedia => Set<PostMedia>();
 
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 

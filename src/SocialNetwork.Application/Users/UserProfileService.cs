@@ -3,6 +3,7 @@ using SocialNetwork.Application.Auth;
 using SocialNetwork.Application.Common.Abstractions;
 using SocialNetwork.Application.Common.Exceptions;
 using SocialNetwork.Application.Common.Extensions;
+using SocialNetwork.Application.Common.Files;
 using SocialNetwork.Application.Users.Requests;
 using SocialNetwork.Application.Users.Responses;
 using SocialNetwork.Domain.Users;
@@ -11,14 +12,7 @@ namespace SocialNetwork.Application.Users;
 
 public class UserProfileService : IUserProfileService
 {
-    public const long MaxAvatarSizeBytes = 5 * 1024 * 1024;
-
-    private static readonly Dictionary<string, string> AllowedAvatarTypes = new()
-    {
-        ["image/jpeg"] = ".jpg",
-        ["image/png"] = ".png",
-        ["image/webp"] = ".webp",
-    };
+    public const long MaxAvatarSizeBytes = ImageFiles.MaxSizeBytes;
 
     private readonly IUserRepository _userRepository;
     private readonly IUnitOfWork _unitOfWork;
@@ -95,20 +89,7 @@ public class UserProfileService : IUserProfileService
     public async Task<UserProfileResponse> UploadAvatar(
         Stream content, string contentType, long length, CancellationToken ct = default)
     {
-        if (length == 0)
-        {
-            throw new BadRequestException("Файл порожній.");
-        }
-
-        if (length > MaxAvatarSizeBytes)
-        {
-            throw new BadRequestException("Файл завеликий (максимум 5 МБ).");
-        }
-
-        if (!AllowedAvatarTypes.TryGetValue(contentType, out var extension))
-        {
-            throw new BadRequestException("Дозволені формати: JPEG, PNG, WEBP.");
-        }
+        var extension = ImageFiles.GetExtensionOrThrow(contentType, length);
 
         var user = await GetCurrentUser(ct);
         var oldAvatarUrl = user.AvatarUrl;

@@ -48,11 +48,12 @@ flowchart LR
 ```
 Domain/Users              Application/Users              Infrastructure/Persistence/Configurations/Users
 Domain/Auth               Application/Auth               Infrastructure/Persistence/Configurations/Auth
-(далі) Domain/Posts       Application/Posts              ...
+Domain/Posts              Application/Posts              Infrastructure/Persistence/Configurations/Posts
 ```
 
-Поточні модулі: **Auth** (реєстрація, вхід, токени, email), **Users** (кабінет).
-Заплановані за ТЗ: Posts/Media, Stories, Reels, Social (likes, comments, follows, saved), Direct (чат, SignalR),
+Поточні модулі: **Auth** (реєстрація, вхід, токени, email), **Users** (кабінет),
+**Posts** (пости з 1–10 фото, стрічка, перевірка власника при редагуванні й видаленні).
+Заплановані за ТЗ: Stories, Reels, Social (likes, comments, follows, saved), Direct (чат, SignalR),
 Notifications, Explore/Search, Settings.
 
 **Правило меж:** модуль не використовує репозиторії іншого модуля напряму — лише його сервіс-інтерфейс
@@ -141,6 +142,8 @@ sequenceDiagram
 ```mermaid
 erDiagram
     users ||--o{ refresh_tokens : "має"
+    users ||--o{ posts : "автор"
+    posts ||--|{ post_media : "1-10 фото"
     users ||--o{ user_roles : ""
     roles ||--o{ user_roles : ""
 
@@ -167,13 +170,38 @@ erDiagram
         varchar replaced_by_token_hash
         timestamptz created_at
     }
+    posts {
+        uuid id PK
+        uuid author_id FK
+        varchar caption "2200, null"
+        timestamptz created_at "індекс для стрічки"
+        timestamptz updated_at "null"
+        timestamptz deleted_at "soft delete"
+    }
+    post_media {
+        uuid id PK
+        uuid post_id FK
+        varchar url "500, файл у S3"
+        int position "порядок у каруселі"
+        timestamptz created_at
+    }
 ```
+
+**Пости:**
+- Фото лежать у S3-сховищі (`posts/{authorId}/{guid}.jpg`), у БД — лише URL. Якщо пост не вдалося зберегти,
+  уже завантажені фото видаляються.
+- Видалення поста — soft delete (рядок лишається з `deleted_at`), а файли фото видаляються зі сховища,
+  щоб вони не відкривались за прямим посиланням.
+- Стрічка (`GET /feed`): поки немає підписок — пости всіх публічних акаунтів і власні, новіші зверху.
+  Після модуля Follow — пости підписок і власні. Приватний акаунт бачить лише власник (згодом — і підписники).
+- Пагінація курсором: `?cursor=<nextCursor>&limit=20` (`limit` до 50). Курсор — `created_at` останнього поста,
+  тож нові пости зверху не зсувають сторінки й не дають дублів.
 
 Також таблиці Identity (`user_claims`, `user_logins`, `user_tokens`, `role_claims`) і `data_protection_keys`.
 Назви таблиць і колонок — у `snake_case` (стандарт PostgreSQL), налаштовано через `UseSnakeCaseNamingConvention()`.
 
 Заплановані зв'язки: `follows (follower_id, following_id)` — self-referencing many-to-many;
-`posts (author_id → users)`; `media (post_id → posts)`; `stories`, `comments`, `likes`, `saved_posts`,
+`stories`, `comments`, `likes`, `saved_posts`,
 `chats`, `messages`, `notifications`, `chat_themes`.
 
 ## Середовища

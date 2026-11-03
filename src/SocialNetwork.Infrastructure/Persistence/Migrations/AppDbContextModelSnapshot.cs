@@ -260,6 +260,83 @@ namespace SocialNetwork.Infrastructure.Persistence.Migrations
                     b.ToTable("refresh_tokens", (string)null);
                 });
 
+            modelBuilder.Entity("SocialNetwork.Domain.Posts.Post", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AuthorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("author_id");
+
+                    b.Property<string>("Caption")
+                        .HasMaxLength(2200)
+                        .HasColumnType("character varying(2200)")
+                        .HasColumnName("caption");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_posts");
+
+                    b.HasIndex("CreatedAt")
+                        .IsDescending()
+                        .HasDatabaseName("ix_posts_created_at");
+
+                    b.HasIndex("AuthorId", "CreatedAt")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("ix_posts_author_id_created_at");
+
+                    b.ToTable("posts", (string)null);
+                });
+
+            modelBuilder.Entity("SocialNetwork.Domain.Posts.PostMedia", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer")
+                        .HasColumnName("position");
+
+                    b.Property<Guid>("PostId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("post_id");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("url");
+
+                    b.HasKey("Id")
+                        .HasName("pk_post_media");
+
+                    b.HasIndex("PostId", "Position")
+                        .IsUnique()
+                        .HasDatabaseName("ix_post_media_post_id_position");
+
+                    b.ToTable("post_media", (string)null);
+                });
+
             modelBuilder.Entity("SocialNetwork.Domain.Users.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -446,6 +523,35 @@ namespace SocialNetwork.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_refresh_tokens_users_user_id");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("SocialNetwork.Domain.Posts.Post", b =>
+                {
+                    b.HasOne("SocialNetwork.Domain.Users.User", "Author")
+                        .WithMany()
+                        .HasForeignKey("AuthorId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_posts_users_author_id");
+
+                    b.Navigation("Author");
+                });
+
+            modelBuilder.Entity("SocialNetwork.Domain.Posts.PostMedia", b =>
+                {
+                    b.HasOne("SocialNetwork.Domain.Posts.Post", "Post")
+                        .WithMany("Media")
+                        .HasForeignKey("PostId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_post_media_posts_post_id");
+
+                    b.Navigation("Post");
+                });
+
+            modelBuilder.Entity("SocialNetwork.Domain.Posts.Post", b =>
+                {
+                    b.Navigation("Media");
                 });
 
             modelBuilder.Entity("SocialNetwork.Domain.Users.User", b =>
