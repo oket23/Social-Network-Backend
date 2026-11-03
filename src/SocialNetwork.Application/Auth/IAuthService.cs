@@ -14,7 +14,11 @@ public interface IAuthService
 
     Task Logout(RefreshTokenRequest request, CancellationToken ct = default);
 
+    /// <summary>Підтверджує email поточного користувача кодом з листа.</summary>
     Task ConfirmEmail(ConfirmEmailRequest request, CancellationToken ct = default);
+
+    /// <summary>Надсилає поточному користувачу новий лист з кодом підтвердження.</summary>
+    Task ResendConfirmationEmail(CancellationToken ct = default);
 
     /// <summary>Надсилає лист зі скиданням пароля. Нічого не повідомляє, чи існує такий email.</summary>
     Task ForgotPassword(ForgotPasswordRequest request, CancellationToken ct = default);

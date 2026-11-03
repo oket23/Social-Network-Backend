@@ -2,8 +2,6 @@ namespace SocialNetwork.Application.Auth.Requests;
 
 public class ConfirmEmailRequest
 {
-    public Guid UserId { get; set; }
-
-    /// <summary>Токен з посилання в листі (як є, у форматі base64url).</summary>
-    public required string Token { get; set; }
+    /// <summary>6-значний код з листа.</summary>
+    public required string Code { get; set; }
 }

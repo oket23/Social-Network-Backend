@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Web;
 using SocialNetwork.Application.Auth.Responses;
 using SocialNetwork.Application.Users.Responses;
 using SocialNetwork.Tests.Infrastructure;
@@ -27,7 +26,7 @@ public class AuthTests
         Assert.False(string.IsNullOrEmpty(auth.AccessToken));
         Assert.False(string.IsNullOrEmpty(auth.RefreshToken));
         Assert.False(auth.User.EmailConfirmed);
-        Assert.NotNull(_factory.Emails.GetLastLink(auth.User.Email, "Підтвердження"));
+        Assert.Matches("^[0-9]{6}$", _factory.Emails.GetLastCode(auth.User.Email, "Підтвердження"));
     }
 
     [Fact]
@@ -114,16 +113,56 @@ public class AuthTests
     }
 
     [Fact]
-    public async Task ConfirmEmail_WithLinkFromEmail_ConfirmsEmail()
+    public async Task ConfirmEmail_WithCodeFromEmail_ConfirmsEmail()
     {
         var auth = await _client.Register();
-        var link = _factory.Emails.GetLastLink(auth.User.Email, "Підтвердження");
+        var code = _factory.Emails.GetLastCode(auth.User.Email, "Підтвердження");
+        var client = _factory.CreateClient().Authorize(auth.AccessToken);
 
-        var response = await _client.GetAsync($"/auth/confirm-email{link.Query}");
+        var response = await client.PostAsJsonAsync("/auth/confirm-email", new { code });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var me = await _factory.CreateClient().Authorize(auth.AccessToken).GetFromJsonAsync<Envelope<UserProfileResponse>>("/users/me");
+        var me = await client.GetFromJsonAsync<Envelope<UserProfileResponse>>("/users/me");
         Assert.True(me!.Data!.EmailConfirmed);
+    }
+
+    [Fact]
+    public async Task ConfirmEmail_WrongCode_Returns400()
+    {
+        var auth = await _client.Register();
+        var code = _factory.Emails.GetLastCode(auth.User.Email, "Підтвердження");
+        var wrongCode = code == "000000" ? "111111" : "000000";
+
+        var response = await _factory.CreateClient().Authorize(auth.AccessToken)
+            .PostAsJsonAsync("/auth/confirm-email", new { code = wrongCode });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ConfirmEmail_WithoutToken_Returns401()
+    {
+        var response = await _client.PostAsJsonAsync("/auth/confirm-email", new { code = "123456" });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ResendConfirmation_SendsNewEmail_AndFailsAfterConfirmation()
+    {
+        var auth = await _client.Register();
+        var client = _factory.CreateClient().Authorize(auth.AccessToken);
+
+        var resend = await client.PostAsync("/auth/resend-confirmation", null);
+
+        Assert.Equal(HttpStatusCode.OK, resend.StatusCode);
+        Assert.Equal(2, _factory.Emails.CountSent(auth.User.Email, "Підтвердження"));
+
+        var code = _factory.Emails.GetLastCode(auth.User.Email, "Підтвердження");
+        await client.PostAsJsonAsync("/auth/confirm-email", new { code });
+        var afterConfirm = await client.PostAsync("/auth/resend-confirmation", null);
+
+        Assert.Equal(HttpStatusCode.BadRequest, afterConfirm.StatusCode);
     }
 
     [Fact]
@@ -134,11 +173,10 @@ public class AuthTests
         var forgot = await _client.PostAsJsonAsync("/auth/forgot-password", new { email = auth.User.Email });
         Assert.Equal(HttpStatusCode.OK, forgot.StatusCode);
 
-        var link = _factory.Emails.GetLastLink(auth.User.Email, "Скидання");
-        var token = HttpUtility.ParseQueryString(link.Query)["token"];
+        var code = _factory.Emails.GetLastCode(auth.User.Email, "Скидання");
 
         var reset = await _client.PostAsJsonAsync("/auth/reset-password",
-            new { email = auth.User.Email, token, newPassword = "NewPassw0rd" });
+            new { email = auth.User.Email, code, newPassword = "NewPassw0rd" });
         Assert.Equal(HttpStatusCode.OK, reset.StatusCode);
 
         var oldLogin = await _client.PostAsJsonAsync("/auth/login", new { login = auth.User.Email, password = TestClient.Password });
@@ -149,9 +187,9 @@ public class AuthTests
         Assert.Equal(HttpStatusCode.OK, newLogin.StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, oldRefresh.StatusCode);
 
-        // Токен скидання одноразовий.
+        // Код скидання одноразовий.
         var reuse = await _client.PostAsJsonAsync("/auth/reset-password",
-            new { email = auth.User.Email, token, newPassword = "Another1Pass" });
+            new { email = auth.User.Email, code, newPassword = "Another1Pass" });
         Assert.Equal(HttpStatusCode.BadRequest, reuse.StatusCode);
     }
 

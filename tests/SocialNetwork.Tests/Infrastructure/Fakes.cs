@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Net;
 using System.Text.RegularExpressions;
 using SocialNetwork.Application.Common.Abstractions;
 
@@ -17,16 +16,18 @@ public partial class FakeEmailSender : IEmailSender
         return Task.CompletedTask;
     }
 
-    /// <summary>Останній лист на адресу з темою, що містить subjectPart, — повертає посилання з кнопки.</summary>
-    public Uri GetLastLink(string toEmail, string subjectPart)
+    public int CountSent(string toEmail, string subjectPart) =>
+        _sent.Count(e => e.To == toEmail && e.Subject.Contains(subjectPart));
+
+    /// <summary>Останній лист на адресу з темою, що містить subjectPart, — повертає 6-значний код з нього.</summary>
+    public string GetLastCode(string toEmail, string subjectPart)
     {
         var email = _sent.Last(e => e.To == toEmail && e.Subject.Contains(subjectPart));
-        var href = HrefRegex().Match(email.HtmlBody).Groups[1].Value;
-        return new Uri(WebUtility.HtmlDecode(href));
+        return CodeRegex().Match(email.HtmlBody).Groups[1].Value;
     }
 
-    [GeneratedRegex("href=\"([^\"]+)\"")]
-    private static partial Regex HrefRegex();
+    [GeneratedRegex(">([0-9]{6})<")]
+    private static partial Regex CodeRegex();
 }
 
 public class FakeFileStorage : IFileStorage

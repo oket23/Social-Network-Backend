@@ -5,7 +5,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SocialNetwork.Application.Auth;
 using SocialNetwork.Application.Common.Abstractions;
-using SocialNetwork.Application.Common.Settings;
 using SocialNetwork.Application.Users;
 using SocialNetwork.Domain.Users;
 using SocialNetwork.Infrastructure.Auth;
@@ -55,7 +54,6 @@ public static class DependencyInjection
                 "Jwt:Key має містити щонайменше 32 символи. Задайте його через dotnet user-secrets (див. README).")
             .ValidateOnStart();
 
-        services.Configure<FrontendSettings>(configuration.GetSection(FrontendSettings.SectionName));
         services.Configure<SmtpSettings>(configuration.GetSection(SmtpSettings.SectionName));
         services.Configure<BrevoSettings>(configuration.GetSection(BrevoSettings.SectionName));
         services.Configure<StorageSettings>(configuration.GetSection(StorageSettings.SectionName));
@@ -93,14 +91,17 @@ public static class DependencyInjection
                 // Блокування після 5 невдалих спроб входу на 15 хвилин (захист від перебору паролів).
                 options.Lockout.MaxFailedAccessAttempts = 5;
                 options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
+
+                // Підтвердження email і скидання пароля — 6-значним кодом (TOTP), а не довгим токеном для посилання:
+                // фронт — мобільний застосунок, користувач вводить код з листа. Код дійсний кілька хвилин,
+                // нічого не зберігається в БД; після зміни пароля старі коди стають недійсними (security stamp).
+                options.Tokens.EmailConfirmationTokenProvider = TokenOptions.DefaultEmailProvider;
+                options.Tokens.PasswordResetTokenProvider = TokenOptions.DefaultEmailProvider;
             })
             .AddRoles<IdentityRole<Guid>>()
             .AddEntityFrameworkStores<AppDbContext>()
             .AddDefaultTokenProviders()
             .AddErrorDescriber<UkrainianIdentityErrorDescriber>();
-
-        // Термін дії токенів підтвердження email і скидання пароля.
-        services.Configure<DataProtectionTokenProviderOptions>(o => o.TokenLifespan = TimeSpan.FromHours(3));
 
         services.AddDataProtection()
             .SetApplicationName("SocialNetwork")

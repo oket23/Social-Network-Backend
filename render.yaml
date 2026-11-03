@@ -42,8 +42,6 @@ services:
         sync: false
       - key: Cors__AllowedOrigins__0
         sync: false
-      - key: Frontend__BaseUrl
-        sync: false
       # Пошта — через HTTP API Brevo: Render free блокує SMTP-порти (25/465/587), тож Smtp__* тут не працюють.
       - key: Brevo__ApiKey
         sync: false

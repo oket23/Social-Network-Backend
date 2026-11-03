@@ -38,8 +38,7 @@ public class ConfirmEmailRequestValidator : AbstractValidator<ConfirmEmailReques
 {
     public ConfirmEmailRequestValidator()
     {
-        RuleFor(x => x.UserId).NotEmpty();
-        RuleFor(x => x.Token).NotEmpty().WithMessage("Токен обов'язковий.");
+        RuleFor(x => x.Code).EmailCode();
     }
 }
 
@@ -56,7 +55,7 @@ public class ResetPasswordRequestValidator : AbstractValidator<ResetPasswordRequ
     public ResetPasswordRequestValidator()
     {
         RuleFor(x => x.Email).ValidEmail();
-        RuleFor(x => x.Token).NotEmpty().WithMessage("Токен обов'язковий.");
+        RuleFor(x => x.Code).EmailCode();
         RuleFor(x => x.NewPassword).StrongPassword();
     }
 }
