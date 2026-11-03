@@ -80,8 +80,7 @@ UptimeRobot ──кожні 5 хв──► /health/live
    |---|---|
    | `ConnectionStrings__DefaultConnection` | рядок Neon у форматі **.NET** (крок 1) |
    | `Storage__ServiceUrl`, `Storage__Region`, `Storage__AccessKey`, `Storage__SecretKey`, `Storage__PublicBaseUrl` | з кроку 2 |
-   | `Cors__AllowedOrigins__0` | адреса фронтенду (напр. `https://our-front.vercel.app`); поки немає — `http://localhost:3000` |
-   | `Frontend__BaseUrl` | та сама адреса фронтенду (для посилань у листах) |
+   | `Cors__AllowedOrigins__0` | адреса вебверсії фронтенду; поки немає — `http://localhost:8081` (Expo web локально) |
    | `Brevo__ApiKey`, `Brevo__FromEmail` | з кроку 3 |
 
    `Jwt__Key` Render згенерує сам; `PORT`, `ASPNETCORE_ENVIRONMENT`, `OpenApi__Enabled` уже задані в `render.yaml`.

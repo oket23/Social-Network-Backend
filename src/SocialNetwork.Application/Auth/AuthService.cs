@@ -1,5 +1,3 @@
-using System.Buffers.Text;
-using System.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -8,7 +6,6 @@ using SocialNetwork.Application.Auth.Responses;
 using SocialNetwork.Application.Common.Abstractions;
 using SocialNetwork.Application.Common.Exceptions;
 using SocialNetwork.Application.Common.Extensions;
-using SocialNetwork.Application.Common.Settings;
 using SocialNetwork.Application.Users;
 using SocialNetwork.Domain.Auth;
 using SocialNetwork.Domain.Users;
@@ -19,7 +16,7 @@ public class AuthService : IAuthService
 {
     private const string InvalidCredentialsMessage = "Невірний логін або пароль.";
     private const string InvalidRefreshTokenMessage = "Недійсний refresh-токен.";
-    private const string InvalidLinkMessage = "Посилання недійсне або прострочене.";
+    private const string InvalidCodeMessage = "Код недійсний або прострочений.";
 
     private readonly UserManager<User> _userManager;
     private readonly IRefreshTokenRepository _refreshTokenRepository;
@@ -27,7 +24,7 @@ public class AuthService : IAuthService
     private readonly IJwtTokenService _jwtTokenService;
     private readonly IEmailSender _emailSender;
     private readonly JwtSettings _jwtSettings;
-    private readonly FrontendSettings _frontendSettings;
+    private readonly ICurrentUserService _currentUser;
     private readonly ILogger<AuthService> _logger;
 
     public AuthService(
@@ -37,7 +34,7 @@ public class AuthService : IAuthService
         IJwtTokenService jwtTokenService,
         IEmailSender emailSender,
         IOptions<JwtSettings> jwtSettings,
-        IOptions<FrontendSettings> frontendSettings,
+        ICurrentUserService currentUser,
         ILogger<AuthService> logger)
     {
         _userManager = userManager;
@@ -46,7 +43,7 @@ public class AuthService : IAuthService
         _jwtTokenService = jwtTokenService;
         _emailSender = emailSender;
         _jwtSettings = jwtSettings.Value;
-        _frontendSettings = frontendSettings.Value;
+        _currentUser = currentUser;
         _logger = logger;
     }
 
@@ -131,19 +128,28 @@ public class AuthService : IAuthService
 
     public async Task ConfirmEmail(ConfirmEmailRequest request, CancellationToken ct = default)
     {
-        var user = await _userManager.FindByIdAsync(request.UserId.ToString())
-            ?? throw new BadRequestException(InvalidLinkMessage);
-
+        var user = await GetCurrentUser();
         if (user.EmailConfirmed)
         {
             return;
         }
 
-        var result = await _userManager.ConfirmEmailAsync(user, DecodeToken(request.Token));
+        var result = await _userManager.ConfirmEmailAsync(user, request.Code);
         if (!result.Succeeded)
         {
-            throw new BadRequestException(InvalidLinkMessage);
+            throw new BadRequestException(InvalidCodeMessage);
         }
+    }
+
+    public async Task ResendConfirmationEmail(CancellationToken ct = default)
+    {
+        var user = await GetCurrentUser();
+        if (user.EmailConfirmed)
+        {
+            throw new BadRequestException("Email уже підтверджено.");
+        }
+
+        await SendConfirmationEmail(user, ct);
     }
 
     public async Task ForgotPassword(ForgotPasswordRequest request, CancellationToken ct = default)
@@ -155,27 +161,23 @@ public class AuthService : IAuthService
             return;
         }
 
-        var token = await _userManager.GeneratePasswordResetTokenAsync(user);
-        var link = $"{_frontendSettings.BaseUrl.TrimEnd('/')}/reset-password" +
-                   $"?email={Uri.EscapeDataString(user.Email!)}&token={EncodeToken(token)}";
-
-        await TrySendEmail(user.Email!, "Скидання пароля", EmailTemplates.ResetPassword(user.DisplayName, link), ct);
+        var code = await _userManager.GeneratePasswordResetTokenAsync(user);
+        await TrySendEmail(user.Email!, "Скидання пароля", EmailTemplates.ResetPassword(user.DisplayName, code), ct);
     }
 
     public async Task ResetPassword(ResetPasswordRequest request, CancellationToken ct = default)
     {
         var user = await _userManager.FindByEmailAsync(request.Email)
-            ?? throw new BadRequestException(InvalidLinkMessage);
-
-        var token = DecodeToken(request.Token);
+            ?? throw new BadRequestException(InvalidCodeMessage);
 
         // Транзакція: або пароль змінено І всі сесії відкликано, або нічого.
         await _unitOfWork.ExecuteInTransactionAsync(async innerCt =>
         {
-            var result = await _userManager.ResetPasswordAsync(user, token, request.NewPassword);
+            // Після зміни пароля Identity оновлює security stamp — тож цей самий код вдруге вже не спрацює.
+            var result = await _userManager.ResetPasswordAsync(user, request.Code, request.NewPassword);
             if (result.Errors.Any(e => e.Code == nameof(IdentityErrorDescriber.InvalidToken)))
             {
-                throw new BadRequestException(InvalidLinkMessage);
+                throw new BadRequestException(InvalidCodeMessage);
             }
 
             result.ThrowIfFailed();
@@ -219,11 +221,15 @@ public class AuthService : IAuthService
 
     private async Task SendConfirmationEmail(User user, CancellationToken ct)
     {
-        var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
-        var link = $"{_frontendSettings.BaseUrl.TrimEnd('/')}/confirm-email" +
-                   $"?userId={user.Id}&token={EncodeToken(token)}";
+        // Завдяки налаштуванню options.Tokens у Infrastructure Identity видає 6-значний код, а не довгий токен.
+        var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+        await TrySendEmail(user.Email!, "Підтвердження email", EmailTemplates.ConfirmEmail(user.DisplayName, code), ct);
+    }
 
-        await TrySendEmail(user.Email!, "Підтвердження email", EmailTemplates.ConfirmEmail(user.DisplayName, link), ct);
+    private async Task<User> GetCurrentUser()
+    {
+        var user = await _userManager.FindByIdAsync(_currentUser.GetCurrentUserId().ToString());
+        return user ?? throw new NotFoundException("Користувача не знайдено.");
     }
 
     /// <summary>Помилка SMTP не повинна ламати реєстрацію чи відповідь API — лише логуємо.</summary>
@@ -236,21 +242,6 @@ public class AuthService : IAuthService
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Не вдалося надіслати лист \"{Subject}\" на {Email}", subject, to);
-        }
-    }
-
-    // Токени Identity містять символи '+', '/', '=' — кодуємо в base64url, щоб безпечно передати в URL.
-    private static string EncodeToken(string token) => Base64Url.EncodeToString(Encoding.UTF8.GetBytes(token));
-
-    private static string DecodeToken(string token)
-    {
-        try
-        {
-            return Encoding.UTF8.GetString(Base64Url.DecodeFromChars(token));
-        }
-        catch (FormatException)
-        {
-            throw new BadRequestException(InvalidLinkMessage);
         }
     }
 }

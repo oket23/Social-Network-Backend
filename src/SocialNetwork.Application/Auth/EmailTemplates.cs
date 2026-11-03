@@ -4,28 +4,24 @@ namespace SocialNetwork.Application.Auth;
 
 internal static class EmailTemplates
 {
-    public static string ConfirmEmail(string displayName, string link) => Layout(
+    public static string ConfirmEmail(string displayName, string code) => Layout(
         $"Вітаємо, {WebUtility.HtmlEncode(displayName)}!",
-        "Підтвердіть свою електронну адресу, щоб завершити реєстрацію.",
-        "Підтвердити email",
-        link);
+        "Введіть цей код у застосунку, щоб підтвердити електронну адресу.",
+        code);
 
-    public static string ResetPassword(string displayName, string link) => Layout(
+    public static string ResetPassword(string displayName, string code) => Layout(
         $"Привіт, {WebUtility.HtmlEncode(displayName)}!",
-        "Ми отримали запит на скидання пароля. Посилання дійсне обмежений час. Якщо це були не ви — просто проігноруйте лист.",
-        "Скинути пароль",
-        link);
+        "Ми отримали запит на скидання пароля. Введіть цей код у застосунку. Якщо це були не ви — просто проігноруйте лист.",
+        code);
 
-    private static string Layout(string title, string text, string buttonText, string link)
-    {
-        var safeLink = WebUtility.HtmlEncode(link);
-        return $"""
-            <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto">
-              <h2>{title}</h2>
-              <p>{text}</p>
-              <p><a href="{safeLink}" style="display:inline-block;padding:10px 20px;background:#0095f6;color:#fff;text-decoration:none;border-radius:8px">{buttonText}</a></p>
-              <p style="color:#888;font-size:12px">Якщо кнопка не працює, скопіюйте посилання: {safeLink}</p>
-            </div>
-            """;
-    }
+    // Код — лише цифри, тож кодувати його не потрібно. Посилань у листі немає: застосунок мобільний (Expo),
+    // і посилання на сторінку фронту на телефоні не відкриється в застосунку.
+    private static string Layout(string title, string text, string code) => $"""
+        <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto">
+          <h2>{title}</h2>
+          <p>{text}</p>
+          <p style="font-size:32px;font-weight:bold;letter-spacing:8px;margin:24px 0">{code}</p>
+          <p style="color:#888;font-size:12px">Код дійсний кілька хвилин. Якщо він прострочився, запросіть новий у застосунку.</p>
+        </div>
+        """;
 }

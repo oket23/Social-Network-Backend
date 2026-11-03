@@ -5,7 +5,7 @@
 
 ## Проєкт
 
-Backend навчального клону Instagram (команда: 2 дизайнери + 2 розробники; фронт — Next.js, окремий репозиторій).
+Backend навчального клону Instagram (команда: 2 дизайнери + 2 розробники; фронт — Expo / React Native (веб + iOS/Android), окремий репозиторій https://github.com/kispolina/InstagramClone).
 ASP.NET Core Web API на .NET 10, PostgreSQL, ASP.NET Core Identity + JWT.
 Детально: [docs/architecture.md](docs/architecture.md), пояснення «навіщо» — [docs/learning-guide.md](docs/learning-guide.md).
 

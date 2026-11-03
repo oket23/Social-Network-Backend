@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using SocialNetwork.Application.Auth;
@@ -62,17 +63,33 @@ public class AuthController : ControllerBase
         return Ok(new ApiSuccessResponse("Ви вийшли з акаунта."));
     }
 
-    /// <summary>Підтвердження email за посиланням з листа.</summary>
-    [HttpGet("confirm-email")]
+    /// <summary>Підтвердження email кодом з листа. Потрібен вхід: код перевіряється для поточного користувача.</summary>
+    [HttpPost("confirm-email")]
+    [Authorize]
+    [EnableRateLimiting(DependencyInjection.AuthRateLimitPolicy)]
     [ProducesResponseType<ApiSuccessResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> ConfirmEmail([FromQuery] ConfirmEmailRequest request, CancellationToken ct)
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> ConfirmEmail(ConfirmEmailRequest request, CancellationToken ct)
     {
         await _authService.ConfirmEmail(request, ct);
         return Ok(new ApiSuccessResponse("Email підтверджено."));
     }
 
-    /// <summary>Надсилає лист зі скиданням пароля (відповідь однакова, навіть якщо email не зареєстрований).</summary>
+    /// <summary>Надсилає новий лист з кодом підтвердження email поточному користувачу.</summary>
+    [HttpPost("resend-confirmation")]
+    [Authorize]
+    [EnableRateLimiting(DependencyInjection.AuthRateLimitPolicy)]
+    [ProducesResponseType<ApiSuccessResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> ResendConfirmation(CancellationToken ct)
+    {
+        await _authService.ResendConfirmationEmail(ct);
+        return Ok(new ApiSuccessResponse("Ми надіслали новий код на вашу пошту."));
+    }
+
+    /// <summary>Надсилає лист з кодом для скидання пароля (відповідь однакова, навіть якщо email не зареєстрований).</summary>
     [HttpPost("forgot-password")]
     [EnableRateLimiting(DependencyInjection.AuthRateLimitPolicy)]
     [ProducesResponseType<ApiSuccessResponse>(StatusCodes.Status200OK)]
@@ -83,7 +100,7 @@ public class AuthController : ControllerBase
         return Ok(new ApiSuccessResponse("Якщо такий email зареєстрований, ми надіслали на нього лист."));
     }
 
-    /// <summary>Встановлює новий пароль за токеном з листа. Усі сесії користувача завершуються.</summary>
+    /// <summary>Встановлює новий пароль за кодом з листа. Усі сесії користувача завершуються.</summary>
     [HttpPost("reset-password")]
     [EnableRateLimiting(DependencyInjection.AuthRateLimitPolicy)]
     [ProducesResponseType<ApiSuccessResponse>(StatusCodes.Status200OK)]

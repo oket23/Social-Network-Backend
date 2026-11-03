@@ -91,9 +91,10 @@ dotnet run --project src/SocialNetwork.Api
 | POST | `/auth/login` | — | вхід за email або username → токени |
 | POST | `/auth/refresh` | — | нова пара токенів за refresh-токеном |
 | POST | `/auth/logout` | — | відкликати refresh-токен |
-| GET | `/auth/confirm-email?userId&token` | — | підтвердження email (посилання з листа) |
-| POST | `/auth/forgot-password` | — | лист зі скиданням пароля |
-| POST | `/auth/reset-password` | — | новий пароль за токеном з листа |
+| POST | `/auth/confirm-email` | Bearer | підтвердження email 6-значним кодом з листа (`{ code }`) |
+| POST | `/auth/resend-confirmation` | Bearer | надіслати лист з кодом підтвердження ще раз |
+| POST | `/auth/forgot-password` | — | лист з кодом для скидання пароля (`{ email }`) |
+| POST | `/auth/reset-password` | — | новий пароль за кодом з листа (`{ email, code, newPassword }`) |
 | GET | `/users/me` | Bearer | мій профіль |
 | PUT | `/users/me` | Bearer | редагування профілю |
 | PUT | `/users/me/password` | Bearer | зміна пароля |
@@ -102,13 +103,17 @@ dotnet run --project src/SocialNetwork.Api
 | GET | `/health/live` | — | лише «API живий», без БД (для пінгу UptimeRobot) |
 | GET | `/` | — | перенаправляє на `/scalar` (де документація увімкнена) |
 
-Rate limiting: 5 запитів/хв з однієї IP на `register`, `login`, `forgot-password`, `reset-password` (відповідь `429`).
+Rate limiting: 5 запитів/хв з однієї IP на `register`, `login`, `confirm-email`, `resend-confirmation`,
+`forgot-password`, `reset-password` (відповідь `429`).
 
 **Для фронтенду:**
 - Авторизація: після `login`/`register` надсилати `Authorization: Bearer <accessToken>`; на `401` — `POST /auth/refresh`
   з `refreshToken` і повторити запит; refresh теж `401` → на сторінку входу.
 - Access-токен живе 15 хв, refresh — 7 днів і **одноразовий** (після refresh використовувати новий).
-- Адресу фронту треба додати в CORS (`Cors__AllowedOrigins__0` на Render), інакше браузер блокуватиме запити.
+- Листи містять **6-значний код**, а не посилання (фронт — мобільний застосунок на Expo): користувач вводить код у застосунку.
+  Код дійсний кілька хвилин; прострочився — `resend-confirmation` або повторний `forgot-password`.
+- Адресу вебверсії фронту треба додати в CORS (`Cors__AllowedOrigins__0` на Render), інакше браузер блокуватиме запити.
+  Для застосунку на телефоні CORS не потрібен.
 - Типи для TypeScript можна згенерувати з `/openapi/v1.json` (наприклад, `openapi-typescript`).
 
 ## Конфігурація
@@ -121,7 +126,6 @@ Rate limiting: 5 запитів/хв з однієї IP на `register`, `login`
 | `Smtp:*` | Host, Port, Security (None/StartTls/...), Username, Password, FromEmail — відправка через SMTP | Dev: smtp4dev |
 | `Brevo:ApiKey`, `Brevo:FromEmail` | відправка через HTTP API Brevo; якщо `ApiKey` задано — замість SMTP (Render free блокує SMTP) | staging: Render |
 | `Storage:*` | ServiceUrl, Region, AccessKey, SecretKey, BucketName, PublicBaseUrl — S3-сховище | Dev: RustFS; staging: Render (Supabase) |
-| `Frontend:BaseUrl` | адреса фронту для посилань у листах | Render |
 | `Cors:AllowedOrigins` | дозволені адреси фронту | Render (`Cors__AllowedOrigins__0=...`) |
 | `OpenApi:Enabled` | показувати `/scalar` поза Development | staging: `true` |
 

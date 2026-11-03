@@ -23,6 +23,11 @@ public static class ValidationRules
         .Matches("[a-z]").WithMessage("Пароль має містити малу літеру.")
         .Matches("[0-9]").WithMessage("Пароль має містити цифру.");
 
+    /// <summary>Код з листа (підтвердження email, скидання пароля).</summary>
+    public static IRuleBuilderOptions<T, string> EmailCode<T>(this IRuleBuilder<T, string> rule) => rule
+        .NotEmpty().WithMessage("Введіть код з листа.")
+        .Matches("^[0-9]{6}$").WithMessage("Код має складатися з 6 цифр.");
+
     public static IRuleBuilderOptions<T, string> ValidEmail<T>(this IRuleBuilder<T, string> rule) => rule
         .NotEmpty().WithMessage("Email обов'язковий.")
         .MaximumLength(256)
