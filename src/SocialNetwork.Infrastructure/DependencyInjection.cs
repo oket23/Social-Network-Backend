@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SocialNetwork.Application.Auth;
 using SocialNetwork.Application.Common.Abstractions;
+using SocialNetwork.Application.Posts;
 using SocialNetwork.Application.Users;
 using SocialNetwork.Domain.Users;
 using SocialNetwork.Infrastructure.Auth;
@@ -70,6 +71,7 @@ public static class DependencyInjection
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+        services.AddScoped<IPostRepository, PostRepository>();
     }
 
     private static void AddIdentity(IServiceCollection services)
