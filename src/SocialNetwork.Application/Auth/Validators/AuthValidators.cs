@@ -8,7 +8,18 @@ public class RegisterRequestValidator : AbstractValidator<RegisterRequest>
 {
     public RegisterRequestValidator()
     {
-        RuleFor(x => x.Email).ValidEmail();
+        // Рівно один спосіб реєстрації: email або номер телефону.
+        RuleFor(x => x)
+            .Must(x => !string.IsNullOrWhiteSpace(x.Email) ^ !string.IsNullOrWhiteSpace(x.PhoneNumber))
+            .WithMessage("Вкажіть email або номер телефону (лише один із двох).")
+            .WithName("Email");
+
+        When(x => !string.IsNullOrWhiteSpace(x.Email), () =>
+            RuleFor(x => x.Email!).ValidEmail());
+
+        When(x => !string.IsNullOrWhiteSpace(x.PhoneNumber), () =>
+            RuleFor(x => x.PhoneNumber!).ValidPhoneNumber());
+
         RuleFor(x => x.Username).ValidUsername();
         RuleFor(x => x.DisplayName)
             .NotEmpty().WithMessage("Ім'я обов'язкове.")
@@ -39,6 +50,14 @@ public class ConfirmEmailRequestValidator : AbstractValidator<ConfirmEmailReques
     public ConfirmEmailRequestValidator()
     {
         RuleFor(x => x.Code).EmailCode();
+    }
+}
+
+public class ConfirmPhoneRequestValidator : AbstractValidator<ConfirmPhoneRequest>
+{
+    public ConfirmPhoneRequestValidator()
+    {
+        RuleFor(x => x.Code).SmsCode();
     }
 }
 

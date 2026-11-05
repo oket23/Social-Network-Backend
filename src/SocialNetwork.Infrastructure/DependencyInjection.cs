@@ -12,6 +12,7 @@ using SocialNetwork.Infrastructure.Auth;
 using SocialNetwork.Infrastructure.Email;
 using SocialNetwork.Infrastructure.Persistence;
 using SocialNetwork.Infrastructure.Persistence.Repositories;
+using SocialNetwork.Infrastructure.Sms;
 using SocialNetwork.Infrastructure.Storage;
 
 namespace SocialNetwork.Infrastructure;
@@ -27,6 +28,7 @@ public static class DependencyInjection
         services.AddSingleton<IJwtTokenService, JwtTokenService>();
         services.AddSingleton<IFileStorage, S3FileStorage>();
         AddEmail(services, configuration);
+        AddSms(services, configuration);
 
         return services;
     }
@@ -45,6 +47,21 @@ public static class DependencyInjection
         }
     }
 
+    private static void AddSms(IServiceCollection services, IConfiguration configuration)
+    {
+        // Задано Twilio:AccountSid і AuthToken → SMS через HTTP API Twilio.
+        // Інакше (локально) — просто логуємо повідомлення: немає локального аналога smtp4dev для SMS.
+        if (!string.IsNullOrWhiteSpace(configuration[$"{TwilioSettings.SectionName}:AccountSid"]) &&
+            !string.IsNullOrWhiteSpace(configuration[$"{TwilioSettings.SectionName}:AuthToken"]))
+        {
+            services.AddHttpClient<ISmsSender, TwilioSmsSender>(client => client.Timeout = TimeSpan.FromSeconds(10));
+        }
+        else
+        {
+            services.AddScoped<ISmsSender, LoggingSmsSender>();
+        }
+    }
+
     private static void AddSettings(IServiceCollection services, IConfiguration configuration)
     {
         // ValidateOnStart: якщо ключ JWT не задано, застосунок впаде одразу з зрозумілою помилкою,
@@ -57,6 +74,7 @@ public static class DependencyInjection
 
         services.Configure<SmtpSettings>(configuration.GetSection(SmtpSettings.SectionName));
         services.Configure<BrevoSettings>(configuration.GetSection(BrevoSettings.SectionName));
+        services.Configure<TwilioSettings>(configuration.GetSection(TwilioSettings.SectionName));
         services.Configure<StorageSettings>(configuration.GetSection(StorageSettings.SectionName));
     }
 
@@ -86,7 +104,9 @@ public static class DependencyInjection
                 options.Password.RequireLowercase = true;
                 options.Password.RequireNonAlphanumeric = false;
 
-                options.User.RequireUniqueEmail = true;
+                // false, бо реєстрація дозволена і через номер телефону (тоді Email порожній) — унікальність
+                // email/телефону AuthService перевіряє сам, до створення користувача.
+                options.User.RequireUniqueEmail = false;
                 options.User.AllowedUserNameCharacters =
                     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.";
 
@@ -94,9 +114,10 @@ public static class DependencyInjection
                 options.Lockout.MaxFailedAccessAttempts = 5;
                 options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
 
-                // Підтвердження email і скидання пароля — 6-значним кодом (TOTP), а не довгим токеном для посилання:
-                // фронт — мобільний застосунок, користувач вводить код з листа. Код дійсний кілька хвилин,
-                // нічого не зберігається в БД; після зміни пароля старі коди стають недійсними (security stamp).
+                // Підтвердження email/телефону і скидання пароля — 6-значним кодом (TOTP), а не довгим токеном
+                // для посилання: фронт — мобільний застосунок, користувач вводить код з листа чи SMS. Код дійсний
+                // кілька хвилин, нічого не зберігається в БД; після зміни пароля старі коди стають недійсними
+                // (security stamp). ChangePhoneNumberTokenProvider лишається дефолтним DefaultPhoneProvider.
                 options.Tokens.EmailConfirmationTokenProvider = TokenOptions.DefaultEmailProvider;
                 options.Tokens.PasswordResetTokenProvider = TokenOptions.DefaultEmailProvider;
             })

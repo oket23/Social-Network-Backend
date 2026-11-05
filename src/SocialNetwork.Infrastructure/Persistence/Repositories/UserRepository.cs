@@ -21,4 +21,7 @@ public class UserRepository : RepositoryBase<User>, IUserRepository
         var normalized = _normalizer.NormalizeName(username);
         return Query.AnyAsync(u => u.Id != exceptUserId && u.NormalizedUserName == normalized, ct);
     }
+
+    public Task<User?> FindByPhoneNumber(string phoneNumber, CancellationToken ct = default) =>
+        Query.FirstOrDefaultAsync(u => u.PhoneNumber == phoneNumber, ct);
 }

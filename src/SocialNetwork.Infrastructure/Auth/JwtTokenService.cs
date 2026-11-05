@@ -24,19 +24,31 @@ public class JwtTokenService : IJwtTokenService
         var expiresAt = DateTime.UtcNow.AddMinutes(_settings.AccessTokenMinutes);
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_settings.Key));
 
+        // Email і PhoneNumber взаємовиключні при реєстрації — у claims кладемо лише те, що є в користувача.
+        var claims = new Dictionary<string, object>
+        {
+            [JwtRegisteredClaimNames.Sub] = user.Id.ToString(),
+            [JwtRegisteredClaimNames.UniqueName] = user.UserName!,
+            [JwtRegisteredClaimNames.Jti] = Guid.NewGuid().ToString(),
+        };
+
+        if (user.Email is not null)
+        {
+            claims[JwtRegisteredClaimNames.Email] = user.Email;
+        }
+
+        if (user.PhoneNumber is not null)
+        {
+            claims[JwtRegisteredClaimNames.PhoneNumber] = user.PhoneNumber;
+        }
+
         var descriptor = new SecurityTokenDescriptor
         {
             Issuer = _settings.Issuer,
             Audience = _settings.Audience,
             Expires = expiresAt,
             SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256),
-            Claims = new Dictionary<string, object>
-            {
-                [JwtRegisteredClaimNames.Sub] = user.Id.ToString(),
-                [JwtRegisteredClaimNames.Email] = user.Email!,
-                [JwtRegisteredClaimNames.UniqueName] = user.UserName!,
-                [JwtRegisteredClaimNames.Jti] = Guid.NewGuid().ToString(),
-            },
+            Claims = claims,
         };
 
         return (_handler.CreateToken(descriptor), expiresAt);

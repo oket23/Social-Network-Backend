@@ -378,7 +378,6 @@ namespace SocialNetwork.Infrastructure.Persistence.Migrations
                         .HasColumnName("display_name");
 
                     b.Property<string>("Email")
-                        .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)")
                         .HasColumnName("email");
@@ -416,7 +415,8 @@ namespace SocialNetwork.Infrastructure.Persistence.Migrations
                         .HasColumnName("password_hash");
 
                     b.Property<string>("PhoneNumber")
-                        .HasColumnType("text")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
                         .HasColumnName("phone_number");
 
                     b.Property<bool>("PhoneNumberConfirmed")
@@ -452,6 +452,10 @@ namespace SocialNetwork.Infrastructure.Persistence.Migrations
                     b.HasIndex("NormalizedUserName")
                         .IsUnique()
                         .HasDatabaseName("UserNameIndex");
+
+                    b.HasIndex("PhoneNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ix_users_phone_number");
 
                     b.ToTable("users", (string)null);
                 });
