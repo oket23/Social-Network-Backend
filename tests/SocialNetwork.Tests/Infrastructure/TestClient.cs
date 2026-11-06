@@ -32,9 +32,28 @@ public static class TestClient
         };
     }
 
+    public static object NewPhoneRegistration(string? phoneNumber = null, string? password = null)
+    {
+        var id = Guid.NewGuid().ToString("N")[..12];
+        return new
+        {
+            phoneNumber = phoneNumber ?? $"+1555{Random.Shared.Next(1000000, 9999999)}",
+            username = $"user_{id}",
+            displayName = "Test User",
+            password = password ?? Password,
+        };
+    }
+
     public static async Task<AuthResponse> Register(this HttpClient client, object? registration = null)
     {
         var response = await client.PostAsJsonAsync("/auth/register", registration ?? NewRegistration());
+        response.EnsureSuccessStatusCode();
+        return (await response.ReadEnvelope<AuthResponse>()).Data!;
+    }
+
+    public static async Task<AuthResponse> RegisterByPhone(this HttpClient client, object? registration = null)
+    {
+        var response = await client.PostAsJsonAsync("/auth/register", registration ?? NewPhoneRegistration());
         response.EnsureSuccessStatusCode();
         return (await response.ReadEnvelope<AuthResponse>()).Data!;
     }

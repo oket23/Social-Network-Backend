@@ -28,8 +28,18 @@ public static class ValidationRules
         .NotEmpty().WithMessage("Введіть код з листа.")
         .Matches("^[0-9]{6}$").WithMessage("Код має складатися з 6 цифр.");
 
+    /// <summary>Код з SMS (підтвердження номера телефону).</summary>
+    public static IRuleBuilderOptions<T, string> SmsCode<T>(this IRuleBuilder<T, string> rule) => rule
+        .NotEmpty().WithMessage("Введіть код з SMS.")
+        .Matches("^[0-9]{6}$").WithMessage("Код має складатися з 6 цифр.");
+
     public static IRuleBuilderOptions<T, string> ValidEmail<T>(this IRuleBuilder<T, string> rule) => rule
         .NotEmpty().WithMessage("Email обов'язковий.")
         .MaximumLength(256)
         .EmailAddress().WithMessage("Некоректний email.");
+
+    /// <summary>Формат E.164: '+' і 8-15 цифр (наприклад, +380501234567).</summary>
+    public static IRuleBuilderOptions<T, string> ValidPhoneNumber<T>(this IRuleBuilder<T, string> rule) => rule
+        .NotEmpty().WithMessage("Номер телефону обов'язковий.")
+        .Matches(@"^\+[1-9]\d{7,14}$").WithMessage("Номер телефону має бути у форматі +380501234567.");
 }

@@ -20,6 +20,12 @@ public interface IAuthService
     /// <summary>Надсилає поточному користувачу новий лист з кодом підтвердження.</summary>
     Task ResendConfirmationEmail(CancellationToken ct = default);
 
+    /// <summary>Підтверджує номер телефону поточного користувача кодом з SMS.</summary>
+    Task ConfirmPhone(ConfirmPhoneRequest request, CancellationToken ct = default);
+
+    /// <summary>Надсилає поточному користувачу нову SMS з кодом підтвердження номера.</summary>
+    Task ResendPhoneConfirmation(CancellationToken ct = default);
+
     /// <summary>Надсилає лист зі скиданням пароля. Нічого не повідомляє, чи існує такий email.</summary>
     Task ForgotPassword(ForgotPasswordRequest request, CancellationToken ct = default);
 
