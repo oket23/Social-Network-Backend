@@ -1,5 +1,6 @@
 using FluentValidation;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Logging;
 using SocialNetwork.Application.Common.Abstractions;
 using SocialNetwork.Application.Common.Exceptions;
 using SocialNetwork.Application.Common.Files;
@@ -26,6 +27,7 @@ public class PostService : IPostService
     private readonly IFileStorage _fileStorage;
     private readonly UserManager<User> _userManager;
     private readonly IValidator<CreatePostRequest> _createValidator;
+    private readonly ILogger<PostService> _logger;
 
     public PostService(
         IPostRepository postRepository,
@@ -33,7 +35,8 @@ public class PostService : IPostService
         ICurrentUserService currentUser,
         IFileStorage fileStorage,
         UserManager<User> userManager,
-        IValidator<CreatePostRequest> createValidator)
+        IValidator<CreatePostRequest> createValidator,
+        ILogger<PostService> logger)
     {
         _postRepository = postRepository;
         _unitOfWork = unitOfWork;
@@ -41,6 +44,7 @@ public class PostService : IPostService
         _fileStorage = fileStorage;
         _userManager = userManager;
         _createValidator = createValidator;
+        _logger = logger;
     }
 
     public async Task<PostResponse> Create(CreatePostRequest request, CancellationToken ct = default)
@@ -77,7 +81,7 @@ public class PostService : IPostService
             // Пост не створився — завантажені фото нікому не потрібні, прибираємо їх зі сховища.
             foreach (var url in uploadedUrls)
             {
-                await _fileStorage.DeleteAsync(url, CancellationToken.None);
+                await TryDeleteFile(url);
             }
 
             throw;
@@ -112,14 +116,30 @@ public class PostService : IPostService
         // А фото видаляємо по-справжньому: інакше вони відкривалися б за прямим посиланням.
         foreach (var media in post.Media)
         {
-            await _fileStorage.DeleteAsync(media.Url, ct);
+            await TryDeleteFile(media.Url);
+        }
+    }
+
+    /// <summary>
+    /// Пост у БД уже змінено — збій видалення файлу зі сховища не має ламати запит
+    /// і не має зупиняти видалення решти файлів.
+    /// </summary>
+    private async Task TryDeleteFile(string url)
+    {
+        try
+        {
+            await _fileStorage.DeleteAsync(url, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Не вдалося видалити файл {Url} зі сховища", url);
         }
     }
 
     public async Task<CursorPage<PostResponse>> GetFeed(GetPostsRequest request, CancellationToken ct = default)
     {
         var viewerId = _currentUser.GetCurrentUserId();
-        var posts = await _postRepository.GetFeed(viewerId, request.Cursor?.UtcDateTime, request.Limit + 1, ct);
+        var posts = await _postRepository.GetFeed(viewerId, PostCursor.Decode(request.Cursor), request.Limit + 1, ct);
         return ToPage(posts, request.Limit, viewerId);
     }
 
@@ -135,7 +155,8 @@ public class PostService : IPostService
             throw new ForbiddenException(PrivateAccountMessage);
         }
 
-        var posts = await _postRepository.GetByAuthor(author.Id, request.Cursor?.UtcDateTime, request.Limit + 1, ct);
+        var before = PostCursor.Decode(request.Cursor);
+        var posts = await _postRepository.GetByAuthor(author.Id, before, request.Limit + 1, ct);
         return ToPage(posts, request.Limit, viewerId);
     }
 
@@ -178,7 +199,7 @@ public class PostService : IPostService
         return new CursorPage<PostResponse>
         {
             Items = items,
-            NextCursor = hasMore ? items[^1].CreatedAt : null,
+            NextCursor = hasMore ? PostCursor.Encode(items[^1].CreatedAt, items[^1].Id) : null,
         };
     }
 

@@ -4,7 +4,7 @@ namespace SocialNetwork.Application.Posts.Requests;
 public class GetPostsRequest
 {
     /// <summary>NextCursor з попередньої сторінки; порожньо — перша сторінка.</summary>
-    public DateTimeOffset? Cursor { get; set; }
+    public string? Cursor { get; set; }
 
     public int Limit { get; set; } = 20;
 }

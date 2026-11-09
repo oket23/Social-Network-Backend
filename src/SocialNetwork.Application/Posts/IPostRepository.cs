@@ -12,7 +12,9 @@ public interface IPostRepository : IRepository<Post>
     Task<Post?> GetDetails(Guid id, CancellationToken ct = default);
 
     /// <summary>Стрічка: пости публічних акаунтів і власні, новіші за <paramref name="before"/> не беруться.</summary>
-    Task<List<Post>> GetFeed(Guid viewerId, DateTime? before, int take, CancellationToken ct = default);
+    Task<List<Post>> GetFeed(
+        Guid viewerId, (DateTime CreatedAt, Guid Id)? before, int take, CancellationToken ct = default);
 
-    Task<List<Post>> GetByAuthor(Guid authorId, DateTime? before, int take, CancellationToken ct = default);
+    Task<List<Post>> GetByAuthor(
+        Guid authorId, (DateTime CreatedAt, Guid Id)? before, int take, CancellationToken ct = default);
 }

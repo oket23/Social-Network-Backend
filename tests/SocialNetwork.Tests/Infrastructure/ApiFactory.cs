@@ -21,6 +21,8 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
     public FakeEmailSender Emails { get; } = new();
 
+    public FakeFileStorage Files { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -34,7 +36,7 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
             services.AddSingleton<IEmailSender>(Emails);
 
             services.RemoveAll<IFileStorage>();
-            services.AddSingleton<IFileStorage, FakeFileStorage>();
+            services.AddSingleton<IFileStorage>(Files);
         });
     }
 

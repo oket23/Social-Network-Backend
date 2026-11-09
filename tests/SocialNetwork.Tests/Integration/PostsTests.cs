@@ -1,9 +1,13 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using SocialNetwork.Application.Auth.Responses;
 using SocialNetwork.Application.Common.Responses;
 using SocialNetwork.Application.Posts.Responses;
+using SocialNetwork.Domain.Posts;
+using SocialNetwork.Infrastructure.Persistence;
 using SocialNetwork.Tests.Infrastructure;
 
 namespace SocialNetwork.Tests.Integration;
@@ -170,9 +174,64 @@ public class PostsTests
         Assert.Equal([third.Id, second.Id], page1.Items.Select(p => p.Id));
         Assert.NotNull(page1.NextCursor);
 
-        var page2 = await GetPage(client, $"{url}&cursor={Uri.EscapeDataString(page1.NextCursor.Value.ToString("O"))}");
+        var page2 = await GetPage(client, $"{url}&cursor={Uri.EscapeDataString(page1.NextCursor!)}");
         Assert.Equal([first.Id], page2.Items.Select(p => p.Id));
         Assert.Null(page2.NextCursor);
+    }
+
+    [Fact]
+    public async Task UserPosts_WithSameCreatedAt_NoneAreSkippedAcrossPages()
+    {
+        // Регресія: курсор лише за CreatedAt губив пости з однаковим часом створення на межі сторінок.
+        var (client, auth) = await CreateUser();
+        var first = await CreatePost(client, "1");
+        var second = await CreatePost(client, "2");
+        var third = await CreatePost(client, "3");
+        await ForceSameCreatedAt(first.Id, second.Id, third.Id);
+
+        var url = $"/users/{auth.User.Username}/posts?limit=2";
+        var ids = new List<Guid>();
+        string? cursor = null;
+        do
+        {
+            var page = await GetPage(client, cursor is null ? url : $"{url}&cursor={Uri.EscapeDataString(cursor)}");
+            ids.AddRange(page.Items.Select(p => p.Id));
+            cursor = page.NextCursor;
+        } while (cursor is not null);
+
+        Assert.Equal(
+            new[] { first.Id, second.Id, third.Id }.OrderBy(x => x),
+            ids.OrderBy(x => x));
+    }
+
+    [Fact]
+    public async Task Delete_WhenStorageFailsForOnePhoto_StillDeletesPostAndOtherPhoto()
+    {
+        var (client, _) = await CreateUser();
+        var response = await client.PostAsync("/posts", PostForm("Два фото", "image/png", "image/jpeg"));
+        var post = (await response.ReadEnvelope<PostResponse>()).Data!;
+        _factory.Files.FailNextDeleteFor(post.Media[0].Url);
+
+        var delete = await client.DeleteAsync($"/posts/{post.Id}");
+
+        Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/posts/{post.Id}")).StatusCode);
+        Assert.True(_factory.Files.WasDeleted(post.Media[1].Url));
+    }
+
+    private async Task ForceSameCreatedAt(params Guid[] postIds)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var sameMoment = DateTime.UtcNow;
+
+        var posts = await db.Set<Post>().Where(p => postIds.Contains(p.Id)).ToListAsync();
+        foreach (var post in posts)
+        {
+            post.CreatedAt = sameMoment;
+        }
+
+        await db.SaveChangesAsync();
     }
 
     [Fact]

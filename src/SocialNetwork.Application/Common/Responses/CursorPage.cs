@@ -9,5 +9,6 @@ public class CursorPage<T>
 {
     public required IReadOnlyList<T> Items { get; init; }
 
-    public DateTime? NextCursor { get; init; }
+    /// <summary>Непрозорий токен — передавати назад як є, не парсити.</summary>
+    public string? NextCursor { get; init; }
 }
