@@ -321,6 +321,10 @@ namespace SocialNetwork.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("post_id");
 
+                    b.Property<int>("Type")
+                        .HasColumnType("integer")
+                        .HasColumnName("type");
+
                     b.Property<string>("Url")
                         .IsRequired()
                         .HasMaxLength(500)

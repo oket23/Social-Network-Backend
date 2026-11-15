@@ -1,3 +1,5 @@
+using SocialNetwork.Domain.Posts;
+
 namespace SocialNetwork.Application.Posts.Responses;
 
 public class PostResponse
@@ -6,7 +8,7 @@ public class PostResponse
 
     public string? Caption { get; set; }
 
-    /// <summary>Фото в порядку каруселі.</summary>
+    /// <summary>Фото й відео в порядку каруселі.</summary>
     public required IReadOnlyList<PostMediaResponse> Media { get; set; }
 
     public required PostAuthorResponse Author { get; set; }
@@ -22,6 +24,8 @@ public class PostResponse
 public class PostMediaResponse
 {
     public required string Url { get; set; }
+
+    public MediaType Type { get; set; }
 }
 
 public class PostAuthorResponse

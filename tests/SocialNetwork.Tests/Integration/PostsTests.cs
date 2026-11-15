@@ -40,9 +40,26 @@ public class PostsTests
         Assert.Equal("Перший пост", post.Caption);
         Assert.Equal(2, post.Media.Count);
         Assert.EndsWith(".png", post.Media[0].Url);
+        Assert.Equal(MediaType.Image, post.Media[0].Type);
         Assert.EndsWith(".jpg", post.Media[1].Url);
+        Assert.Equal(MediaType.Image, post.Media[1].Type);
         Assert.Equal(auth.User.Username, post.Author.Username);
         Assert.True(post.IsMine);
+    }
+
+    [Fact]
+    public async Task Create_WithVideo_ReturnsPostWithVideoMedia()
+    {
+        var (client, _) = await CreateUser();
+
+        var response = await client.PostAsync("/posts", PostForm("Відео", "image/png", "video/mp4"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var post = (await response.ReadEnvelope<PostResponse>()).Data!;
+        Assert.Equal(2, post.Media.Count);
+        Assert.Equal(MediaType.Image, post.Media[0].Type);
+        Assert.EndsWith(".mp4", post.Media[1].Url);
+        Assert.Equal(MediaType.Video, post.Media[1].Type);
     }
 
     [Fact]

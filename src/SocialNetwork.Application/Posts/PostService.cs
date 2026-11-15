@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging;
 using SocialNetwork.Application.Common.Abstractions;
 using SocialNetwork.Application.Common.Exceptions;
-using SocialNetwork.Application.Common.Files;
 using SocialNetwork.Application.Common.Responses;
 using SocialNetwork.Application.Posts.Requests;
 using SocialNetwork.Application.Posts.Responses;
@@ -53,8 +52,8 @@ public class PostService : IPostService
         await _createValidator.ValidateAndThrowAsync(request, ct);
 
         // Спершу перевіряємо всі файли, щоб не завантажити половину і впасти на сьомому.
-        var extensions = request.Files
-            .Select(f => ImageFiles.GetExtensionOrThrow(f.ContentType, f.Length))
+        var mediaInfo = request.Files
+            .Select(f => PostMediaFiles.GetMediaOrThrow(f.ContentType, f.Length))
             .ToList();
 
         var authorId = _currentUser.GetCurrentUserId();
@@ -66,11 +65,12 @@ public class PostService : IPostService
             for (var i = 0; i < request.Files.Count; i++)
             {
                 var file = request.Files[i];
-                var path = $"posts/{authorId}/{Guid.NewGuid():N}{extensions[i]}";
+                var (type, extension) = mediaInfo[i];
+                var path = $"posts/{authorId}/{Guid.NewGuid():N}{extension}";
                 var url = await _fileStorage.UploadAsync(file.Content, path, file.ContentType, ct);
 
                 uploadedUrls.Add(url);
-                post.Media.Add(new PostMedia { Url = url, Position = i });
+                post.Media.Add(new PostMedia { Url = url, Position = i, Type = type });
             }
 
             _postRepository.Add(post);

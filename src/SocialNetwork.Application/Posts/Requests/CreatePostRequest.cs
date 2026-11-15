@@ -6,6 +6,6 @@ public class CreatePostRequest
 {
     public string? Caption { get; init; }
 
-    /// <summary>Фото в порядку каруселі.</summary>
+    /// <summary>Фото й відео в порядку каруселі.</summary>
     public required IReadOnlyList<FileUpload> Files { get; init; }
 }

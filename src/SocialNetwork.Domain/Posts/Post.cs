@@ -3,7 +3,7 @@ using SocialNetwork.Domain.Users;
 
 namespace SocialNetwork.Domain.Posts;
 
-/// <summary>Пост: підпис + 1–10 фото (карусель, як в Instagram).</summary>
+/// <summary>Пост: підпис + 1–10 фото/відео (карусель, як в Instagram).</summary>
 public class Post : BaseEntity, ISoftDeletable
 {
     public Guid AuthorId { get; set; }

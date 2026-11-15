@@ -21,10 +21,13 @@ public class PostsController : ControllerBase
         _postService = postService;
     }
 
-    /// <summary>Новий пост (multipart/form-data): поле "caption" і 1–10 полів "files" (JPEG/PNG/WEBP до 5 МБ кожне).</summary>
+    /// <summary>
+    /// Новий пост (multipart/form-data): поле "caption" і 1–10 полів "files"
+    /// (фото: JPEG/PNG/WEBP до 5 МБ; відео: MP4/MOV/WEBM до 50 МБ).
+    /// </summary>
     [HttpPost]
     [Consumes("multipart/form-data")]
-    [RequestSizeLimit(PostService.MaxMediaCount * ImageFiles.MaxSizeBytes + 1024 * 1024)]
+    [RequestSizeLimit(PostService.MaxMediaCount * PostMediaFiles.MaxVideoSizeBytes + 1024 * 1024)]
     [ProducesResponseType<ApiSuccessResponse<PostResponse>>(StatusCodes.Status200OK)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Create([FromForm] string? caption, [FromForm] List<IFormFile> files, CancellationToken ct)

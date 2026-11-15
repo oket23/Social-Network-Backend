@@ -143,7 +143,7 @@ sequenceDiagram
 erDiagram
     users ||--o{ refresh_tokens : "має"
     users ||--o{ posts : "автор"
-    posts ||--|{ post_media : "1-10 фото"
+    posts ||--|{ post_media : "1-10 фото/відео"
     users ||--o{ user_roles : ""
     roles ||--o{ user_roles : ""
 
@@ -182,14 +182,15 @@ erDiagram
         uuid id PK
         uuid post_id FK
         varchar url "500, файл у S3"
+        int type "0 = Image, 1 = Video"
         int position "порядок у каруселі"
         timestamptz created_at
     }
 ```
 
 **Пости:**
-- Фото лежать у S3-сховищі (`posts/{authorId}/{guid}.jpg`), у БД — лише URL. Якщо пост не вдалося зберегти,
-  уже завантажені фото видаляються.
+- Фото й відео лежать у S3-сховищі (`posts/{authorId}/{guid}.jpg`), у БД — лише URL і тип (`MediaType`).
+  Фото: JPEG/PNG/WEBP до 5 МБ; відео: MP4/MOV/WEBM до 50 МБ. Якщо пост не вдалося зберегти, уже завантажені файли видаляються.
 - Видалення поста — soft delete (рядок лишається з `deleted_at`), а файли фото видаляються зі сховища,
   щоб вони не відкривались за прямим посиланням.
 - Стрічка (`GET /feed`): поки немає підписок — пости всіх публічних акаунтів і власні, новіші зверху.

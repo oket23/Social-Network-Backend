@@ -10,9 +10,9 @@ public class CreatePostRequestValidator : AbstractValidator<CreatePostRequest>
         RuleFor(x => x.Caption).ValidCaption();
 
         RuleFor(x => x.Files)
-            .NotEmpty().WithMessage("Додайте хоча б одне фото.")
+            .NotEmpty().WithMessage("Додайте хоча б одне фото чи відео.")
             .Must(files => files.Count <= PostService.MaxMediaCount)
-            .WithMessage($"Не більше {PostService.MaxMediaCount} фото в одному пості.");
+            .WithMessage($"Не більше {PostService.MaxMediaCount} медіафайлів в одному пості.");
     }
 }
 
