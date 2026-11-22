@@ -1,11 +1,11 @@
 using FluentValidation;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.Extensions.Logging;
 using SocialNetwork.Application.Common.Abstractions;
 using SocialNetwork.Application.Common.Exceptions;
 using SocialNetwork.Application.Common.Responses;
 using SocialNetwork.Application.Posts.Requests;
 using SocialNetwork.Application.Posts.Responses;
+using SocialNetwork.Application.Storage;
 using SocialNetwork.Domain.Posts;
 using SocialNetwork.Domain.Users;
 
@@ -24,26 +24,26 @@ public class PostService : IPostService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUser;
     private readonly IFileStorage _fileStorage;
+    private readonly IFileCleanupService _fileCleanup;
     private readonly UserManager<User> _userManager;
     private readonly IValidator<CreatePostRequest> _createValidator;
-    private readonly ILogger<PostService> _logger;
 
     public PostService(
         IPostRepository postRepository,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUser,
         IFileStorage fileStorage,
+        IFileCleanupService fileCleanup,
         UserManager<User> userManager,
-        IValidator<CreatePostRequest> createValidator,
-        ILogger<PostService> logger)
+        IValidator<CreatePostRequest> createValidator)
     {
         _postRepository = postRepository;
         _unitOfWork = unitOfWork;
         _currentUser = currentUser;
         _fileStorage = fileStorage;
+        _fileCleanup = fileCleanup;
         _userManager = userManager;
         _createValidator = createValidator;
-        _logger = logger;
     }
 
     public async Task<PostResponse> Create(CreatePostRequest request, CancellationToken ct = default)
@@ -81,7 +81,7 @@ public class PostService : IPostService
             // Пост не створився — завантажені фото нікому не потрібні, прибираємо їх зі сховища.
             foreach (var url in uploadedUrls)
             {
-                await TryDeleteFile(url);
+                await _fileCleanup.TryDeleteOrEnqueue(url);
             }
 
             throw;
@@ -114,25 +114,10 @@ public class PostService : IPostService
         await _unitOfWork.SaveChangesAsync(ct);
 
         // А фото видаляємо по-справжньому: інакше вони відкривалися б за прямим посиланням.
+        // Пост у БД уже змінено — збій видалення файлу не має ламати запит і не зупиняє видалення решти.
         foreach (var media in post.Media)
         {
-            await TryDeleteFile(media.Url);
-        }
-    }
-
-    /// <summary>
-    /// Пост у БД уже змінено — збій видалення файлу зі сховища не має ламати запит
-    /// і не має зупиняти видалення решти файлів.
-    /// </summary>
-    private async Task TryDeleteFile(string url)
-    {
-        try
-        {
-            await _fileStorage.DeleteAsync(url, CancellationToken.None);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Не вдалося видалити файл {Url} зі сховища", url);
+            await _fileCleanup.TryDeleteOrEnqueue(media.Url);
         }
     }
 

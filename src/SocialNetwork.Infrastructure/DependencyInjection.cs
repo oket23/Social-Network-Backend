@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SocialNetwork.Application.Auth;
 using SocialNetwork.Application.Common.Abstractions;
 using SocialNetwork.Application.Posts;
+using SocialNetwork.Application.Storage;
 using SocialNetwork.Application.Users;
 using SocialNetwork.Domain.Users;
 using SocialNetwork.Infrastructure.Auth;
@@ -29,6 +30,8 @@ public static class DependencyInjection
         services.AddSingleton<IFileStorage, S3FileStorage>();
         AddEmail(services, configuration);
         AddSms(services, configuration);
+
+        services.AddHostedService<FileCleanupBackgroundService>();
 
         return services;
     }
@@ -90,6 +93,7 @@ public static class DependencyInjection
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
         services.AddScoped<IPostRepository, PostRepository>();
+        services.AddScoped<IFailedFileDeletionRepository, FailedFileDeletionRepository>();
     }
 
     private static void AddIdentity(IServiceCollection services)

@@ -2,6 +2,7 @@ using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using SocialNetwork.Application.Auth;
 using SocialNetwork.Application.Posts;
+using SocialNetwork.Application.Storage;
 using SocialNetwork.Application.Users;
 
 namespace SocialNetwork.Application;
@@ -16,6 +17,7 @@ public static class DependencyInjection
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IUserProfileService, UserProfileService>();
         services.AddScoped<IPostService, PostService>();
+        services.AddScoped<IFileCleanupService, FileCleanupService>();
 
         return services;
     }

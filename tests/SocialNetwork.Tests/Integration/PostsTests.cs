@@ -3,11 +3,14 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using SocialNetwork.Application.Auth.Responses;
 using SocialNetwork.Application.Common.Responses;
 using SocialNetwork.Application.Posts.Responses;
 using SocialNetwork.Domain.Posts;
+using SocialNetwork.Domain.Storage;
 using SocialNetwork.Infrastructure.Persistence;
+using SocialNetwork.Infrastructure.Storage;
 using SocialNetwork.Tests.Infrastructure;
 
 namespace SocialNetwork.Tests.Integration;
@@ -234,6 +237,83 @@ public class PostsTests
         Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/posts/{post.Id}")).StatusCode);
         Assert.True(_factory.Files.WasDeleted(post.Media[1].Url));
+    }
+
+    [Fact]
+    public async Task Delete_WhenStorageFails_EnqueuesFileForRetry()
+    {
+        var (client, _) = await CreateUser();
+        var response = await client.PostAsync("/posts", PostForm("Збій сховища", "image/png"));
+        var post = (await response.ReadEnvelope<PostResponse>()).Data!;
+        var url = post.Media[0].Url;
+        _factory.Files.FailNextDeleteFor(url);
+
+        var delete = await client.DeleteAsync($"/posts/{post.Id}");
+        Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var pending = await db.Set<FailedFileDeletion>().SingleAsync(f => f.Url == url);
+        Assert.Equal(0, pending.Attempts);
+        Assert.False(_factory.Files.WasDeleted(url));
+    }
+
+    [Fact]
+    public async Task CleanupBackgroundService_RetriesDueFile_RemovesRowOnSuccess()
+    {
+        var (client, _) = await CreateUser();
+        var response = await client.PostAsync("/posts", PostForm("Повторна спроба", "image/png"));
+        var post = (await response.ReadEnvelope<PostResponse>()).Data!;
+        var url = post.Media[0].Url;
+        _factory.Files.FailNextDeleteFor(url);
+        await client.DeleteAsync($"/posts/{post.Id}");
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var pending = await db.Set<FailedFileDeletion>().SingleAsync(f => f.Url == url);
+            pending.NextAttemptAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+
+        // Тепер сховище вже готове прийняти видалення — так, ніби збій минув.
+        _factory.Files.AllowDeleteFor(url);
+        var cleanup = _factory.Services.GetServices<IHostedService>().OfType<FileCleanupBackgroundService>().Single();
+        await cleanup.ProcessDueAsync();
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.False(await verifyDb.Set<FailedFileDeletion>().AnyAsync(f => f.Url == url));
+        Assert.True(_factory.Files.WasDeleted(url));
+    }
+
+    [Fact]
+    public async Task CleanupBackgroundService_StillFailing_IncrementsAttemptsAndReschedules()
+    {
+        var (client, _) = await CreateUser();
+        var response = await client.PostAsync("/posts", PostForm("Досі падає", "image/png"));
+        var post = (await response.ReadEnvelope<PostResponse>()).Data!;
+        var url = post.Media[0].Url;
+        _factory.Files.FailNextDeleteFor(url);
+        await client.DeleteAsync($"/posts/{post.Id}");
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var pending = await db.Set<FailedFileDeletion>().SingleAsync(f => f.Url == url);
+            pending.NextAttemptAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+
+        // Сховище й далі падає — сам факт повторної спроби вже показовий.
+        var cleanup = _factory.Services.GetServices<IHostedService>().OfType<FileCleanupBackgroundService>().Single();
+        await cleanup.ProcessDueAsync();
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var stillPending = await verifyDb.Set<FailedFileDeletion>().SingleAsync(f => f.Url == url);
+        Assert.Equal(1, stillPending.Attempts);
+        Assert.True(stillPending.NextAttemptAt > DateTime.UtcNow);
     }
 
     private async Task ForceSameCreatedAt(params Guid[] postIds)

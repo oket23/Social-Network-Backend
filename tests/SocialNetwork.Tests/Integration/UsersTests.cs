@@ -1,7 +1,11 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using SocialNetwork.Application.Users.Responses;
+using SocialNetwork.Domain.Storage;
+using SocialNetwork.Infrastructure.Persistence;
 using SocialNetwork.Tests.Infrastructure;
 
 namespace SocialNetwork.Tests.Integration;
@@ -126,6 +130,25 @@ public class UsersTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var profile = (await response.ReadEnvelope<UserProfileResponse>()).Data!;
         Assert.StartsWith("https://storage.test/media/avatars/", profile.AvatarUrl);
+    }
+
+    [Fact]
+    public async Task UploadAvatar_Twice_WhenOldAvatarDeleteFails_StillReturns200AndEnqueuesCleanup()
+    {
+        var (client, _) = await CreateUser();
+        var first = (await (await client.PostAsync("/users/me/avatar", ImageForm("image/png")))
+            .ReadEnvelope<UserProfileResponse>()).Data!;
+        _factory.Files.FailNextDeleteFor(first.AvatarUrl!);
+
+        var response = await client.PostAsync("/users/me/avatar", ImageForm("image/png"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var second = (await response.ReadEnvelope<UserProfileResponse>()).Data!;
+        Assert.NotEqual(first.AvatarUrl, second.AvatarUrl);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.True(await db.Set<FailedFileDeletion>().AnyAsync(f => f.Url == first.AvatarUrl));
     }
 
     [Fact]

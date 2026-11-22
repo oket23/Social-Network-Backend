@@ -77,5 +77,8 @@ public class FakeFileStorage : IFileStorage
     /// <summary>Наступний виклик DeleteAsync для цього URL кидатиме виняток.</summary>
     public void FailNextDeleteFor(string url) => _failDeleteUrls[url] = true;
 
+    /// <summary>Знімає позначку збою — наступний DeleteAsync для цього URL уже пройде успішно.</summary>
+    public void AllowDeleteFor(string url) => _failDeleteUrls.TryRemove(url, out _);
+
     public bool WasDeleted(string url) => _deleted.ContainsKey(url);
 }
