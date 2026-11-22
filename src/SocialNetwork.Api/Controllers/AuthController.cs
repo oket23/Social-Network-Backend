@@ -20,7 +20,10 @@ public class AuthController : ControllerBase
         _authService = authService;
     }
 
-    /// <summary>Реєстрація. Одразу повертає токени і надсилає лист підтвердження email.</summary>
+    /// <summary>
+    /// Реєстрація через email або номер телефону (рівно один з двох). Одразу повертає токени
+    /// і надсилає код підтвердження — листом або SMS, залежно від того, що вказано.
+    /// </summary>
     [HttpPost("register")]
     [EnableRateLimiting(DependencyInjection.AuthRateLimitPolicy)]
     [ProducesResponseType<ApiSuccessResponse<AuthResponse>>(StatusCodes.Status200OK)]
@@ -29,10 +32,13 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> Register(RegisterRequest request, CancellationToken ct)
     {
         var result = await _authService.Register(request, ct);
-        return Ok(new ApiSuccessResponse<AuthResponse>(result, "Реєстрація успішна. Перевірте пошту, щоб підтвердити email."));
+        var message = request.Email is not null
+            ? "Реєстрація успішна. Перевірте пошту, щоб підтвердити email."
+            : "Реєстрація успішна. Ми надіслали SMS з кодом підтвердження номера.";
+        return Ok(new ApiSuccessResponse<AuthResponse>(result, message));
     }
 
-    /// <summary>Вхід за email або username.</summary>
+    /// <summary>Вхід за email, username або номером телефону.</summary>
     [HttpPost("login")]
     [EnableRateLimiting(DependencyInjection.AuthRateLimitPolicy)]
     [ProducesResponseType<ApiSuccessResponse<AuthResponse>>(StatusCodes.Status200OK)]
@@ -87,6 +93,32 @@ public class AuthController : ControllerBase
     {
         await _authService.ResendConfirmationEmail(ct);
         return Ok(new ApiSuccessResponse("Ми надіслали новий код на вашу пошту."));
+    }
+
+    /// <summary>Підтвердження номера телефону кодом з SMS. Потрібен вхід: код перевіряється для поточного користувача.</summary>
+    [HttpPost("confirm-phone")]
+    [Authorize]
+    [EnableRateLimiting(DependencyInjection.AuthRateLimitPolicy)]
+    [ProducesResponseType<ApiSuccessResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> ConfirmPhone(ConfirmPhoneRequest request, CancellationToken ct)
+    {
+        await _authService.ConfirmPhone(request, ct);
+        return Ok(new ApiSuccessResponse("Номер телефону підтверджено."));
+    }
+
+    /// <summary>Надсилає нову SMS з кодом підтвердження номера поточному користувачу.</summary>
+    [HttpPost("resend-phone-confirmation")]
+    [Authorize]
+    [EnableRateLimiting(DependencyInjection.AuthRateLimitPolicy)]
+    [ProducesResponseType<ApiSuccessResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> ResendPhoneConfirmation(CancellationToken ct)
+    {
+        await _authService.ResendPhoneConfirmation(ct);
+        return Ok(new ApiSuccessResponse("Ми надіслали новий код на ваш номер телефону."));
     }
 
     /// <summary>Надсилає лист з кодом для скидання пароля (відповідь однакова, навіть якщо email не зареєстрований).</summary>

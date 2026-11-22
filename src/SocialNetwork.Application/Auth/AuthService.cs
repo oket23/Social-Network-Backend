@@ -19,29 +19,35 @@ public class AuthService : IAuthService
     private const string InvalidCodeMessage = "Код недійсний або прострочений.";
 
     private readonly UserManager<User> _userManager;
+    private readonly IUserRepository _userRepository;
     private readonly IRefreshTokenRepository _refreshTokenRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IJwtTokenService _jwtTokenService;
     private readonly IEmailSender _emailSender;
+    private readonly ISmsSender _smsSender;
     private readonly JwtSettings _jwtSettings;
     private readonly ICurrentUserService _currentUser;
     private readonly ILogger<AuthService> _logger;
 
     public AuthService(
         UserManager<User> userManager,
+        IUserRepository userRepository,
         IRefreshTokenRepository refreshTokenRepository,
         IUnitOfWork unitOfWork,
         IJwtTokenService jwtTokenService,
         IEmailSender emailSender,
+        ISmsSender smsSender,
         IOptions<JwtSettings> jwtSettings,
         ICurrentUserService currentUser,
         ILogger<AuthService> logger)
     {
         _userManager = userManager;
+        _userRepository = userRepository;
         _refreshTokenRepository = refreshTokenRepository;
         _unitOfWork = unitOfWork;
         _jwtTokenService = jwtTokenService;
         _emailSender = emailSender;
+        _smsSender = smsSender;
         _jwtSettings = jwtSettings.Value;
         _currentUser = currentUser;
         _logger = logger;
@@ -49,17 +55,37 @@ public class AuthService : IAuthService
 
     public async Task<AuthResponse> Register(RegisterRequest request, CancellationToken ct = default)
     {
+        // RequireUniqueEmail вимкнено (телефон теж підходить для реєстрації), тож унікальність
+        // email/телефону перевіряємо самі — Identity перевірила б лише email.
+        if (request.Email is { } email && await _userManager.FindByEmailAsync(email) is not null)
+        {
+            throw new ConflictException($"Email '{email}' вже зареєстрований.");
+        }
+
+        if (request.PhoneNumber is { } phoneNumber && await _userRepository.FindByPhoneNumber(phoneNumber, ct) is not null)
+        {
+            throw new ConflictException($"Номер телефону '{phoneNumber}' вже зареєстрований.");
+        }
+
         var user = new User
         {
             Email = request.Email,
+            PhoneNumber = request.PhoneNumber,
             UserName = request.Username,
             DisplayName = request.DisplayName,
         };
 
-        // UserManager хешує пароль, перевіряє унікальність email/username і зберігає користувача.
+        // UserManager хешує пароль, перевіряє унікальність username і зберігає користувача.
         (await _userManager.CreateAsync(user, request.Password)).ThrowIfFailed();
 
-        await SendConfirmationEmail(user, ct);
+        if (request.Email is not null)
+        {
+            await SendConfirmationEmail(user, ct);
+        }
+        else
+        {
+            await SendPhoneConfirmationCode(user, ct);
+        }
 
         return await IssueTokens(user, ct);
     }
@@ -68,7 +94,9 @@ public class AuthService : IAuthService
     {
         var user = request.Login.Contains('@')
             ? await _userManager.FindByEmailAsync(request.Login)
-            : await _userManager.FindByNameAsync(request.Login);
+            : IsPhoneNumber(request.Login)
+                ? await _userRepository.FindByPhoneNumber(request.Login, ct)
+                : await _userManager.FindByNameAsync(request.Login);
 
         // Одне й те саме повідомлення для "немає користувача" і "невірний пароль",
         // щоб не можна було перевірити, чи зареєстрований email.
@@ -152,6 +180,33 @@ public class AuthService : IAuthService
         await SendConfirmationEmail(user, ct);
     }
 
+    public async Task ConfirmPhone(ConfirmPhoneRequest request, CancellationToken ct = default)
+    {
+        var user = await GetCurrentUser();
+        if (user.PhoneNumberConfirmed)
+        {
+            return;
+        }
+
+        // ChangePhoneNumberAsync одночасно перевіряє код і виставляє PhoneNumberConfirmed = true.
+        var result = await _userManager.ChangePhoneNumberAsync(user, user.PhoneNumber!, request.Code);
+        if (!result.Succeeded)
+        {
+            throw new BadRequestException(InvalidCodeMessage);
+        }
+    }
+
+    public async Task ResendPhoneConfirmation(CancellationToken ct = default)
+    {
+        var user = await GetCurrentUser();
+        if (user.PhoneNumberConfirmed)
+        {
+            throw new BadRequestException("Номер телефону вже підтверджено.");
+        }
+
+        await SendPhoneConfirmationCode(user, ct);
+    }
+
     public async Task ForgotPassword(ForgotPasswordRequest request, CancellationToken ct = default)
     {
         var user = await _userManager.FindByEmailAsync(request.Email);
@@ -226,6 +281,17 @@ public class AuthService : IAuthService
         await TrySendEmail(user.Email!, "Підтвердження email", EmailTemplates.ConfirmEmail(user.DisplayName, code), ct);
     }
 
+    private async Task SendPhoneConfirmationCode(User user, CancellationToken ct)
+    {
+        // Той самий механізм TOTP-коду, що й для email, але через ChangePhoneNumberTokenProvider (6 цифр для SMS).
+        var code = await _userManager.GenerateChangePhoneNumberTokenAsync(user, user.PhoneNumber!);
+        await TrySendSms(user.PhoneNumber!, SmsTemplates.ConfirmPhone(code), ct);
+    }
+
+    /// <summary>Номер у форматі E.164: '+' і лише цифри далі. Логін без '@' і без '+' вважаємо username.</summary>
+    private static bool IsPhoneNumber(string login) =>
+        login.StartsWith('+') && login.Length > 1 && login[1..].All(char.IsDigit);
+
     private async Task<User> GetCurrentUser()
     {
         var user = await _userManager.FindByIdAsync(_currentUser.GetCurrentUserId().ToString());
@@ -242,6 +308,19 @@ public class AuthService : IAuthService
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Не вдалося надіслати лист \"{Subject}\" на {Email}", subject, to);
+        }
+    }
+
+    /// <summary>Помилка SMS-провайдера не повинна ламати реєстрацію чи відповідь API — лише логуємо.</summary>
+    private async Task TrySendSms(string toPhoneNumber, string message, CancellationToken ct)
+    {
+        try
+        {
+            await _smsSender.SendAsync(toPhoneNumber, message, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Не вдалося надіслати SMS на {PhoneNumber}", toPhoneNumber);
         }
     }
 }

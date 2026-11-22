@@ -14,8 +14,12 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.UserName).HasMaxLength(30).IsRequired();
         builder.Property(u => u.NormalizedUserName).HasMaxLength(30);
 
-        builder.Property(u => u.Email).HasMaxLength(256).IsRequired();
+        builder.Property(u => u.Email).HasMaxLength(256);
         builder.HasIndex(u => u.NormalizedEmail).IsUnique();
+
+        builder.Property(u => u.PhoneNumber).HasMaxLength(20);
+        // Postgres дозволяє кілька NULL у унікальному індексі, тож це не заважає користувачам без телефону.
+        builder.HasIndex(u => u.PhoneNumber).IsUnique();
 
         builder.Property(u => u.DisplayName).HasMaxLength(50).IsRequired();
         builder.Property(u => u.Bio).HasMaxLength(160);

@@ -87,12 +87,14 @@ dotnet run --project src/SocialNetwork.Api
 
 | Метод | Маршрут | Авторизація | Опис |
 |---|---|---|---|
-| POST | `/auth/register` | — | реєстрація (email, username, displayName, password) → токени |
-| POST | `/auth/login` | — | вхід за email або username → токени |
+| POST | `/auth/register` | — | реєстрація **email або телефоном** (рівно одне з двох) + username, displayName, password → токени |
+| POST | `/auth/login` | — | вхід за email, username або номером телефону → токени |
 | POST | `/auth/refresh` | — | нова пара токенів за refresh-токеном |
 | POST | `/auth/logout` | — | відкликати refresh-токен |
 | POST | `/auth/confirm-email` | Bearer | підтвердження email 6-значним кодом з листа (`{ code }`) |
 | POST | `/auth/resend-confirmation` | Bearer | надіслати лист з кодом підтвердження ще раз |
+| POST | `/auth/confirm-phone` | Bearer | підтвердження номера телефону 6-значним кодом з SMS (`{ code }`) |
+| POST | `/auth/resend-phone-confirmation` | Bearer | надіслати SMS з кодом підтвердження ще раз |
 | POST | `/auth/forgot-password` | — | лист з кодом для скидання пароля (`{ email }`) |
 | POST | `/auth/reset-password` | — | новий пароль за кодом з листа (`{ email, code, newPassword }`) |
 | GET | `/users/me` | Bearer | мій профіль |
@@ -110,14 +112,16 @@ dotnet run --project src/SocialNetwork.Api
 | GET | `/` | — | перенаправляє на `/scalar` (де документація увімкнена) |
 
 Rate limiting: 5 запитів/хв з однієї IP на `register`, `login`, `confirm-email`, `resend-confirmation`,
-`forgot-password`, `reset-password` (відповідь `429`).
+`confirm-phone`, `resend-phone-confirmation`, `forgot-password`, `reset-password` (відповідь `429`).
 
 **Для фронтенду:**
 - Авторизація: після `login`/`register` надсилати `Authorization: Bearer <accessToken>`; на `401` — `POST /auth/refresh`
   з `refreshToken` і повторити запит; refresh теж `401` → на сторінку входу.
 - Access-токен живе 15 хв, refresh — 7 днів і **одноразовий** (після refresh використовувати новий).
-- Листи містять **6-значний код**, а не посилання (фронт — мобільний застосунок на Expo): користувач вводить код у застосунку.
-  Код дійсний кілька хвилин; прострочився — `resend-confirmation` або повторний `forgot-password`.
+- Листи й SMS містять **6-значний код**, а не посилання (фронт — мобільний застосунок на Expo): користувач вводить код у застосунку.
+  Код дійсний кілька хвилин; прострочився — `resend-confirmation`/`resend-phone-confirmation` або повторний `forgot-password`.
+- Реєстрація телефоном: `phoneNumber` у форматі E.164 (`+380501234567`), без `email`. Скидання пароля (`forgot-password`)
+  поки працює лише через email.
 - Адресу вебверсії фронту треба додати в CORS (`Cors__AllowedOrigins__0` на Render), інакше браузер блокуватиме запити.
   Для застосунку на телефоні CORS не потрібен.
 - Типи для TypeScript можна згенерувати з `/openapi/v1.json` (наприклад, `openapi-typescript`).
@@ -131,6 +135,7 @@ Rate limiting: 5 запитів/хв з однієї IP на `register`, `login`
 | `Jwt:AccessTokenMinutes`, `Jwt:RefreshTokenDays` | терміни дії токенів | `appsettings.json` |
 | `Smtp:*` | Host, Port, Security (None/StartTls/...), Username, Password, FromEmail — відправка через SMTP | Dev: smtp4dev |
 | `Brevo:ApiKey`, `Brevo:FromEmail` | відправка через HTTP API Brevo; якщо `ApiKey` задано — замість SMTP (Render free блокує SMTP) | staging: Render |
+| `Twilio:AccountSid`, `Twilio:AuthToken`, `Twilio:FromNumber` | відправка SMS через HTTP API Twilio; якщо порожні — SMS лише логуються (Dev) | staging: Render |
 | `Storage:*` | ServiceUrl, Region, AccessKey, SecretKey, BucketName, PublicBaseUrl — S3-сховище | Dev: RustFS; staging: Render (Supabase) |
 | `Cors:AllowedOrigins` | дозволені адреси фронту | Render (`Cors__AllowedOrigins__0=...`) |
 | `OpenApi:Enabled` | показувати `/scalar` поза Development | staging: `true` |

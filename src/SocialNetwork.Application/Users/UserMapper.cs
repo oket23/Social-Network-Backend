@@ -9,8 +9,10 @@ public static class UserMapper
     {
         Id = user.Id,
         Username = user.UserName!,
-        Email = user.Email!,
+        Email = user.Email,
         EmailConfirmed = user.EmailConfirmed,
+        PhoneNumber = user.PhoneNumber,
+        PhoneNumberConfirmed = user.PhoneNumberConfirmed,
         DisplayName = user.DisplayName,
         Bio = user.Bio,
         WebsiteUrl = user.WebsiteUrl,

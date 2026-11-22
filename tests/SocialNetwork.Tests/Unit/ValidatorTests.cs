@@ -48,6 +48,54 @@ public class ValidatorTests
     }
 
     [Fact]
+    public void Register_ValidPhoneRequest_IsValid()
+    {
+        var result = new RegisterRequestValidator().Validate(new RegisterRequest
+        {
+            PhoneNumber = "+380501234567", Username = "oleh.dev_1", DisplayName = "Олег", Password = "Passw0rd!",
+        });
+
+        Assert.True(result.IsValid);
+    }
+
+    [Theory]
+    [InlineData("0501234567")]   // без '+'
+    [InlineData("+380")]         // замало цифр
+    [InlineData("+abc1234567")]  // не цифри
+    public void Register_InvalidPhoneNumber_IsInvalid(string phoneNumber)
+    {
+        var result = new RegisterRequestValidator().Validate(new RegisterRequest
+        {
+            PhoneNumber = phoneNumber, Username = "valid_name", DisplayName = "A", Password = "Passw0rd!",
+        });
+
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(RegisterRequest.PhoneNumber));
+    }
+
+    [Fact]
+    public void Register_BothEmailAndPhone_IsInvalid()
+    {
+        var result = new RegisterRequestValidator().Validate(new RegisterRequest
+        {
+            Email = "a@test.com", PhoneNumber = "+380501234567",
+            Username = "valid_name", DisplayName = "A", Password = "Passw0rd!",
+        });
+
+        Assert.False(result.IsValid);
+    }
+
+    [Fact]
+    public void Register_NeitherEmailNorPhone_IsInvalid()
+    {
+        var result = new RegisterRequestValidator().Validate(new RegisterRequest
+        {
+            Username = "valid_name", DisplayName = "A", Password = "Passw0rd!",
+        });
+
+        Assert.False(result.IsValid);
+    }
+
+    [Fact]
     public void UpdateProfile_TooLongBio_IsInvalid()
     {
         var result = new UpdateUserProfileRequestValidator().Validate(new UpdateUserProfileRequest
