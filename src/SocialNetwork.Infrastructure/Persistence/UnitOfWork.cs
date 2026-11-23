@@ -14,6 +14,8 @@ public class UnitOfWork : IUnitOfWork
 
     public Task<int> SaveChangesAsync(CancellationToken ct = default) => _context.SaveChangesAsync(ct);
 
+    public void DiscardChanges() => _context.ChangeTracker.Clear();
+
     public async Task ExecuteInTransactionAsync(Func<CancellationToken, Task> action, CancellationToken ct = default)
     {
         // З EnableRetryOnFailure транзакцію треба запускати через execution strategy,

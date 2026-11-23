@@ -101,7 +101,7 @@ dotnet run --project src/SocialNetwork.Api
 | PUT | `/users/me` | Bearer | редагування профілю |
 | PUT | `/users/me/password` | Bearer | зміна пароля |
 | POST | `/users/me/avatar` | Bearer | аватар (multipart, поле `file`, JPEG/PNG/WEBP ≤ 5 МБ) |
-| POST | `/posts` | Bearer | новий пост (multipart: `caption` + 1–10 полів `files`, JPEG/PNG/WEBP ≤ 5 МБ кожне) |
+| POST | `/posts` | Bearer | новий пост (multipart: `caption` + 1–10 полів `files`; фото JPEG/PNG/WEBP ≤ 5 МБ, відео MP4/MOV/WEBM ≤ 50 МБ, разом ≤ 150 МБ); у відповіді `media[].type` = `"image"` / `"video"` |
 | GET | `/posts/{id}` | Bearer | один пост |
 | PUT | `/posts/{id}` | Bearer | змінити підпис `{ caption }` — лише автор (інакше `403`) |
 | DELETE | `/posts/{id}` | Bearer | видалити пост — лише автор (інакше `403`) |

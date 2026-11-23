@@ -12,7 +12,7 @@ public static class PostMapper
         Caption = post.Caption,
         Media = post.Media
             .OrderBy(m => m.Position)
-            .Select(m => new PostMediaResponse { Url = m.Url })
+            .Select(m => new PostMediaResponse { Url = m.Url, Type = m.Type })
             .ToList(),
         Author = new PostAuthorResponse
         {

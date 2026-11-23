@@ -321,6 +321,10 @@ namespace SocialNetwork.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("post_id");
 
+                    b.Property<int>("Type")
+                        .HasColumnType("integer")
+                        .HasColumnName("type");
+
                     b.Property<string>("Url")
                         .IsRequired()
                         .HasMaxLength(500)
@@ -335,6 +339,45 @@ namespace SocialNetwork.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_post_media_post_id_position");
 
                     b.ToTable("post_media", (string)null);
+                });
+
+            modelBuilder.Entity("SocialNetwork.Domain.Storage.FailedFileDeletion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("last_error");
+
+                    b.Property<DateTime>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_attempt_at");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("url");
+
+                    b.HasKey("Id")
+                        .HasName("pk_failed_file_deletions");
+
+                    b.HasIndex("NextAttemptAt")
+                        .HasDatabaseName("ix_failed_file_deletions_next_attempt_at");
+
+                    b.ToTable("failed_file_deletions", (string)null);
                 });
 
             modelBuilder.Entity("SocialNetwork.Domain.Users.User", b =>

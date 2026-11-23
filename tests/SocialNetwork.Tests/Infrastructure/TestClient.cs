@@ -1,5 +1,7 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using SocialNetwork.Application.Auth.Responses;
 
 namespace SocialNetwork.Tests.Infrastructure;
@@ -65,5 +67,11 @@ public static class TestClient
     }
 
     public static async Task<Envelope<T>> ReadEnvelope<T>(this HttpResponseMessage response) =>
-        (await response.Content.ReadFromJsonAsync<Envelope<T>>())!;
+        (await response.Content.ReadFromJsonAsync<Envelope<T>>(JsonOptions))!;
+
+    /// <summary>Як в API: enum приходять рядками ("image", "video").</summary>
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
+    };
 }

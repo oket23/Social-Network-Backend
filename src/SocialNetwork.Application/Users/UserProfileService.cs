@@ -4,6 +4,7 @@ using SocialNetwork.Application.Common.Abstractions;
 using SocialNetwork.Application.Common.Exceptions;
 using SocialNetwork.Application.Common.Extensions;
 using SocialNetwork.Application.Common.Files;
+using SocialNetwork.Application.Storage;
 using SocialNetwork.Application.Users.Requests;
 using SocialNetwork.Application.Users.Responses;
 using SocialNetwork.Domain.Users;
@@ -19,6 +20,7 @@ public class UserProfileService : IUserProfileService
     private readonly ICurrentUserService _currentUser;
     private readonly UserManager<User> _userManager;
     private readonly IFileStorage _fileStorage;
+    private readonly IFileCleanupService _fileCleanup;
     private readonly IAuthService _authService;
 
     public UserProfileService(
@@ -27,6 +29,7 @@ public class UserProfileService : IUserProfileService
         ICurrentUserService currentUser,
         UserManager<User> userManager,
         IFileStorage fileStorage,
+        IFileCleanupService fileCleanup,
         IAuthService authService)
     {
         _userRepository = userRepository;
@@ -34,6 +37,7 @@ public class UserProfileService : IUserProfileService
         _currentUser = currentUser;
         _userManager = userManager;
         _fileStorage = fileStorage;
+        _fileCleanup = fileCleanup;
         _authService = authService;
     }
 
@@ -102,7 +106,8 @@ public class UserProfileService : IUserProfileService
 
         if (oldAvatarUrl is not null)
         {
-            await _fileStorage.DeleteAsync(oldAvatarUrl, ct);
+            // Новий аватар уже збережено — збій видалення старого не повинен провалювати запит.
+            await _fileCleanup.TryDeleteOrEnqueue(oldAvatarUrl, ct);
         }
 
         return user.ToProfileResponse();

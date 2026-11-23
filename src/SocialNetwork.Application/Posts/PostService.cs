@@ -2,10 +2,10 @@ using FluentValidation;
 using Microsoft.AspNetCore.Identity;
 using SocialNetwork.Application.Common.Abstractions;
 using SocialNetwork.Application.Common.Exceptions;
-using SocialNetwork.Application.Common.Files;
 using SocialNetwork.Application.Common.Responses;
 using SocialNetwork.Application.Posts.Requests;
 using SocialNetwork.Application.Posts.Responses;
+using SocialNetwork.Application.Storage;
 using SocialNetwork.Domain.Posts;
 using SocialNetwork.Domain.Users;
 
@@ -24,6 +24,7 @@ public class PostService : IPostService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUser;
     private readonly IFileStorage _fileStorage;
+    private readonly IFileCleanupService _fileCleanup;
     private readonly UserManager<User> _userManager;
     private readonly IValidator<CreatePostRequest> _createValidator;
 
@@ -32,6 +33,7 @@ public class PostService : IPostService
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUser,
         IFileStorage fileStorage,
+        IFileCleanupService fileCleanup,
         UserManager<User> userManager,
         IValidator<CreatePostRequest> createValidator)
     {
@@ -39,6 +41,7 @@ public class PostService : IPostService
         _unitOfWork = unitOfWork;
         _currentUser = currentUser;
         _fileStorage = fileStorage;
+        _fileCleanup = fileCleanup;
         _userManager = userManager;
         _createValidator = createValidator;
     }
@@ -49,8 +52,8 @@ public class PostService : IPostService
         await _createValidator.ValidateAndThrowAsync(request, ct);
 
         // Спершу перевіряємо всі файли, щоб не завантажити половину і впасти на сьомому.
-        var extensions = request.Files
-            .Select(f => ImageFiles.GetExtensionOrThrow(f.ContentType, f.Length))
+        var mediaInfo = request.Files
+            .Select(f => PostMediaFiles.GetMediaOrThrow(f.ContentType, f.Length))
             .ToList();
 
         var authorId = _currentUser.GetCurrentUserId();
@@ -62,11 +65,12 @@ public class PostService : IPostService
             for (var i = 0; i < request.Files.Count; i++)
             {
                 var file = request.Files[i];
-                var path = $"posts/{authorId}/{Guid.NewGuid():N}{extensions[i]}";
+                var (type, extension) = mediaInfo[i];
+                var path = $"posts/{authorId}/{Guid.NewGuid():N}{extension}";
                 var url = await _fileStorage.UploadAsync(file.Content, path, file.ContentType, ct);
 
                 uploadedUrls.Add(url);
-                post.Media.Add(new PostMedia { Url = url, Position = i });
+                post.Media.Add(new PostMedia { Url = url, Position = i, Type = type });
             }
 
             _postRepository.Add(post);
@@ -74,10 +78,13 @@ public class PostService : IPostService
         }
         catch
         {
-            // Пост не створився — завантажені фото нікому не потрібні, прибираємо їх зі сховища.
+            // Пост не створився — завантажені файли нікому не потрібні, прибираємо їх зі сховища.
+            // Спершу відкидаємо незбережений пост: якщо видалення файлу впаде, черга повторних спроб
+            // робить SaveChanges — і без цього разом із рядком черги записала б і "невдалий" пост.
+            _unitOfWork.DiscardChanges();
             foreach (var url in uploadedUrls)
             {
-                await _fileStorage.DeleteAsync(url, CancellationToken.None);
+                await _fileCleanup.TryDeleteOrEnqueue(url);
             }
 
             throw;
@@ -110,16 +117,17 @@ public class PostService : IPostService
         await _unitOfWork.SaveChangesAsync(ct);
 
         // А фото видаляємо по-справжньому: інакше вони відкривалися б за прямим посиланням.
+        // Пост у БД уже змінено — збій видалення файлу не має ламати запит і не зупиняє видалення решти.
         foreach (var media in post.Media)
         {
-            await _fileStorage.DeleteAsync(media.Url, ct);
+            await _fileCleanup.TryDeleteOrEnqueue(media.Url);
         }
     }
 
     public async Task<CursorPage<PostResponse>> GetFeed(GetPostsRequest request, CancellationToken ct = default)
     {
         var viewerId = _currentUser.GetCurrentUserId();
-        var posts = await _postRepository.GetFeed(viewerId, request.Cursor?.UtcDateTime, request.Limit + 1, ct);
+        var posts = await _postRepository.GetFeed(viewerId, PostCursor.Decode(request.Cursor), request.Limit + 1, ct);
         return ToPage(posts, request.Limit, viewerId);
     }
 
@@ -135,7 +143,8 @@ public class PostService : IPostService
             throw new ForbiddenException(PrivateAccountMessage);
         }
 
-        var posts = await _postRepository.GetByAuthor(author.Id, request.Cursor?.UtcDateTime, request.Limit + 1, ct);
+        var before = PostCursor.Decode(request.Cursor);
+        var posts = await _postRepository.GetByAuthor(author.Id, before, request.Limit + 1, ct);
         return ToPage(posts, request.Limit, viewerId);
     }
 
@@ -178,7 +187,7 @@ public class PostService : IPostService
         return new CursorPage<PostResponse>
         {
             Items = items,
-            NextCursor = hasMore ? items[^1].CreatedAt : null,
+            NextCursor = hasMore ? PostCursor.Encode(items[^1].CreatedAt, items[^1].Id) : null,
         };
     }
 

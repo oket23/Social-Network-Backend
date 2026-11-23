@@ -26,7 +26,7 @@ public class AuthTests
         Assert.False(string.IsNullOrEmpty(auth.AccessToken));
         Assert.False(string.IsNullOrEmpty(auth.RefreshToken));
         Assert.False(auth.User.EmailConfirmed);
-        Assert.Matches("^[0-9]{6}$", _factory.Emails.GetLastCode(auth.User.Email, "Підтвердження"));
+        Assert.Matches("^[0-9]{6}$", _factory.Emails.GetLastCode(auth.User.Email!, "Підтвердження"));
     }
 
     [Fact]
@@ -116,7 +116,7 @@ public class AuthTests
     public async Task ConfirmEmail_WithCodeFromEmail_ConfirmsEmail()
     {
         var auth = await _client.Register();
-        var code = _factory.Emails.GetLastCode(auth.User.Email, "Підтвердження");
+        var code = _factory.Emails.GetLastCode(auth.User.Email!, "Підтвердження");
         var client = _factory.CreateClient().Authorize(auth.AccessToken);
 
         var response = await client.PostAsJsonAsync("/auth/confirm-email", new { code });
@@ -130,7 +130,7 @@ public class AuthTests
     public async Task ConfirmEmail_WrongCode_Returns400()
     {
         var auth = await _client.Register();
-        var code = _factory.Emails.GetLastCode(auth.User.Email, "Підтвердження");
+        var code = _factory.Emails.GetLastCode(auth.User.Email!, "Підтвердження");
         var wrongCode = code == "000000" ? "111111" : "000000";
 
         var response = await _factory.CreateClient().Authorize(auth.AccessToken)
@@ -156,9 +156,9 @@ public class AuthTests
         var resend = await client.PostAsync("/auth/resend-confirmation", null);
 
         Assert.Equal(HttpStatusCode.OK, resend.StatusCode);
-        Assert.Equal(2, _factory.Emails.CountSent(auth.User.Email, "Підтвердження"));
+        Assert.Equal(2, _factory.Emails.CountSent(auth.User.Email!, "Підтвердження"));
 
-        var code = _factory.Emails.GetLastCode(auth.User.Email, "Підтвердження");
+        var code = _factory.Emails.GetLastCode(auth.User.Email!, "Підтвердження");
         await client.PostAsJsonAsync("/auth/confirm-email", new { code });
         var afterConfirm = await client.PostAsync("/auth/resend-confirmation", null);
 
@@ -173,7 +173,7 @@ public class AuthTests
         var forgot = await _client.PostAsJsonAsync("/auth/forgot-password", new { email = auth.User.Email });
         Assert.Equal(HttpStatusCode.OK, forgot.StatusCode);
 
-        var code = _factory.Emails.GetLastCode(auth.User.Email, "Скидання");
+        var code = _factory.Emails.GetLastCode(auth.User.Email!, "Скидання");
 
         var reset = await _client.PostAsJsonAsync("/auth/reset-password",
             new { email = auth.User.Email, code, newPassword = "NewPassw0rd" });

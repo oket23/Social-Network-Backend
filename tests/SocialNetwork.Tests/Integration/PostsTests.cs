@@ -1,9 +1,16 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using SocialNetwork.Application.Auth.Responses;
 using SocialNetwork.Application.Common.Responses;
 using SocialNetwork.Application.Posts.Responses;
+using SocialNetwork.Domain.Posts;
+using SocialNetwork.Domain.Storage;
+using SocialNetwork.Infrastructure.Persistence;
+using SocialNetwork.Infrastructure.Storage;
 using SocialNetwork.Tests.Infrastructure;
 
 namespace SocialNetwork.Tests.Integration;
@@ -36,9 +43,39 @@ public class PostsTests
         Assert.Equal("Перший пост", post.Caption);
         Assert.Equal(2, post.Media.Count);
         Assert.EndsWith(".png", post.Media[0].Url);
+        Assert.Equal(MediaType.Image, post.Media[0].Type);
         Assert.EndsWith(".jpg", post.Media[1].Url);
+        Assert.Equal(MediaType.Image, post.Media[1].Type);
         Assert.Equal(auth.User.Username, post.Author.Username);
         Assert.True(post.IsMine);
+    }
+
+    [Fact]
+    public async Task Create_WithVideo_ReturnsPostWithVideoMedia()
+    {
+        var (client, _) = await CreateUser();
+
+        var response = await client.PostAsync("/posts", PostForm("Відео", "image/png", "video/mp4"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var post = (await response.ReadEnvelope<PostResponse>()).Data!;
+        Assert.Equal(2, post.Media.Count);
+        Assert.Equal(MediaType.Image, post.Media[0].Type);
+        Assert.EndsWith(".mp4", post.Media[1].Url);
+        Assert.Equal(MediaType.Video, post.Media[1].Type);
+    }
+
+    [Fact]
+    public async Task Create_MediaTypeInJson_IsString()
+    {
+        var (client, _) = await CreateUser();
+
+        var response = await client.PostAsync("/posts", PostForm("Відео", "image/png", "video/mp4"));
+
+        // Фронт отримує "image"/"video", а не 0/1.
+        var json = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"type\":\"image\"", json);
+        Assert.Contains("\"type\":\"video\"", json);
     }
 
     [Fact]
@@ -170,9 +207,141 @@ public class PostsTests
         Assert.Equal([third.Id, second.Id], page1.Items.Select(p => p.Id));
         Assert.NotNull(page1.NextCursor);
 
-        var page2 = await GetPage(client, $"{url}&cursor={Uri.EscapeDataString(page1.NextCursor.Value.ToString("O"))}");
+        var page2 = await GetPage(client, $"{url}&cursor={Uri.EscapeDataString(page1.NextCursor!)}");
         Assert.Equal([first.Id], page2.Items.Select(p => p.Id));
         Assert.Null(page2.NextCursor);
+    }
+
+    [Fact]
+    public async Task UserPosts_WithSameCreatedAt_NoneAreSkippedAcrossPages()
+    {
+        // Регресія: курсор лише за CreatedAt губив пости з однаковим часом створення на межі сторінок.
+        var (client, auth) = await CreateUser();
+        var first = await CreatePost(client, "1");
+        var second = await CreatePost(client, "2");
+        var third = await CreatePost(client, "3");
+        await ForceSameCreatedAt(first.Id, second.Id, third.Id);
+
+        var url = $"/users/{auth.User.Username}/posts?limit=2";
+        var ids = new List<Guid>();
+        string? cursor = null;
+        do
+        {
+            var page = await GetPage(client, cursor is null ? url : $"{url}&cursor={Uri.EscapeDataString(cursor)}");
+            ids.AddRange(page.Items.Select(p => p.Id));
+            cursor = page.NextCursor;
+        } while (cursor is not null);
+
+        Assert.Equal(
+            new[] { first.Id, second.Id, third.Id }.OrderBy(x => x),
+            ids.OrderBy(x => x));
+    }
+
+    [Fact]
+    public async Task Delete_WhenStorageFailsForOnePhoto_StillDeletesPostAndOtherPhoto()
+    {
+        var (client, _) = await CreateUser();
+        var response = await client.PostAsync("/posts", PostForm("Два фото", "image/png", "image/jpeg"));
+        var post = (await response.ReadEnvelope<PostResponse>()).Data!;
+        _factory.Files.FailNextDeleteFor(post.Media[0].Url);
+
+        var delete = await client.DeleteAsync($"/posts/{post.Id}");
+
+        Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/posts/{post.Id}")).StatusCode);
+        Assert.True(_factory.Files.WasDeleted(post.Media[1].Url));
+    }
+
+    [Fact]
+    public async Task Delete_WhenStorageFails_EnqueuesFileForRetry()
+    {
+        var (client, _) = await CreateUser();
+        var response = await client.PostAsync("/posts", PostForm("Збій сховища", "image/png"));
+        var post = (await response.ReadEnvelope<PostResponse>()).Data!;
+        var url = post.Media[0].Url;
+        _factory.Files.FailNextDeleteFor(url);
+
+        var delete = await client.DeleteAsync($"/posts/{post.Id}");
+        Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var pending = await db.Set<FailedFileDeletion>().SingleAsync(f => f.Url == url);
+        Assert.Equal(0, pending.Attempts);
+        Assert.False(_factory.Files.WasDeleted(url));
+    }
+
+    [Fact]
+    public async Task CleanupBackgroundService_RetriesDueFile_RemovesRowOnSuccess()
+    {
+        var (client, _) = await CreateUser();
+        var response = await client.PostAsync("/posts", PostForm("Повторна спроба", "image/png"));
+        var post = (await response.ReadEnvelope<PostResponse>()).Data!;
+        var url = post.Media[0].Url;
+        _factory.Files.FailNextDeleteFor(url);
+        await client.DeleteAsync($"/posts/{post.Id}");
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var pending = await db.Set<FailedFileDeletion>().SingleAsync(f => f.Url == url);
+            pending.NextAttemptAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+
+        // Тепер сховище вже готове прийняти видалення — так, ніби збій минув.
+        _factory.Files.AllowDeleteFor(url);
+        var cleanup = _factory.Services.GetServices<IHostedService>().OfType<FileCleanupBackgroundService>().Single();
+        await cleanup.ProcessDueAsync();
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.False(await verifyDb.Set<FailedFileDeletion>().AnyAsync(f => f.Url == url));
+        Assert.True(_factory.Files.WasDeleted(url));
+    }
+
+    [Fact]
+    public async Task CleanupBackgroundService_StillFailing_IncrementsAttemptsAndReschedules()
+    {
+        var (client, _) = await CreateUser();
+        var response = await client.PostAsync("/posts", PostForm("Досі падає", "image/png"));
+        var post = (await response.ReadEnvelope<PostResponse>()).Data!;
+        var url = post.Media[0].Url;
+        _factory.Files.FailNextDeleteFor(url);
+        await client.DeleteAsync($"/posts/{post.Id}");
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var pending = await db.Set<FailedFileDeletion>().SingleAsync(f => f.Url == url);
+            pending.NextAttemptAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+
+        // Сховище й далі падає — сам факт повторної спроби вже показовий.
+        var cleanup = _factory.Services.GetServices<IHostedService>().OfType<FileCleanupBackgroundService>().Single();
+        await cleanup.ProcessDueAsync();
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var stillPending = await verifyDb.Set<FailedFileDeletion>().SingleAsync(f => f.Url == url);
+        Assert.Equal(1, stillPending.Attempts);
+        Assert.True(stillPending.NextAttemptAt > DateTime.UtcNow);
+    }
+
+    private async Task ForceSameCreatedAt(params Guid[] postIds)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var sameMoment = DateTime.UtcNow;
+
+        var posts = await db.Set<Post>().Where(p => postIds.Contains(p.Id)).ToListAsync();
+        foreach (var post in posts)
+        {
+            post.CreatedAt = sameMoment;
+        }
+
+        await db.SaveChangesAsync();
     }
 
     [Fact]

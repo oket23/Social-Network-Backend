@@ -17,17 +17,22 @@ public class PostRepository : RepositoryBase<Post>, IPostRepository
     public Task<Post?> GetDetails(Guid id, CancellationToken ct = default) =>
         WithDetails(Query).FirstOrDefaultAsync(p => p.Id == id, ct);
 
-    public Task<List<Post>> GetFeed(Guid viewerId, DateTime? before, int take, CancellationToken ct = default) =>
+    public Task<List<Post>> GetFeed(
+        Guid viewerId, (DateTime CreatedAt, Guid Id)? before, int take, CancellationToken ct = default) =>
         Page(Query.Where(p => !p.Author.IsPrivate || p.AuthorId == viewerId), before, take, ct);
 
-    public Task<List<Post>> GetByAuthor(Guid authorId, DateTime? before, int take, CancellationToken ct = default) =>
+    public Task<List<Post>> GetByAuthor(
+        Guid authorId, (DateTime CreatedAt, Guid Id)? before, int take, CancellationToken ct = default) =>
         Page(Query.Where(p => p.AuthorId == authorId), before, take, ct);
 
-    private static Task<List<Post>> Page(IQueryable<Post> posts, DateTime? before, int take, CancellationToken ct)
+    private static Task<List<Post>> Page(
+        IQueryable<Post> posts, (DateTime CreatedAt, Guid Id)? before, int take, CancellationToken ct)
     {
-        if (before is not null)
+        if (before is { } cursor)
         {
-            posts = posts.Where(p => p.CreatedAt < before);
+            // Лише CreatedAt < before губив би пости з таким самим часом — додаємо Id як "тай-брейкер".
+            posts = posts.Where(p => p.CreatedAt < cursor.CreatedAt
+                || (p.CreatedAt == cursor.CreatedAt && p.Id < cursor.Id));
         }
 
         return WithDetails(posts)

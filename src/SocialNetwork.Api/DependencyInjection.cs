@@ -1,4 +1,6 @@
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -6,7 +8,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.AspNetCore.Http.Features;
 using SocialNetwork.Api.Filters;
+using SocialNetwork.Api.Middlewares;
 using SocialNetwork.Api.OpenApi;
 using SocialNetwork.Api.Services;
 using SocialNetwork.Application.Auth;
@@ -24,11 +28,25 @@ public static class DependencyInjection
     public static IServiceCollection AddApi(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddControllers(options => options.Filters.Add<ValidationFilter>())
+            // Enum у JSON — рядком ("image", "video"), а не числом (0, 1): фронту не треба знати "магічні" числа.
+            .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(
+                new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)))
             .ConfigureApiBehaviorOptions(options =>
             {
                 // Помилки прив'язки моделі (наприклад, зламаний JSON) — у нашому форматі ApiErrorResponse.
                 options.InvalidModelStateResponseFactory = context =>
                 {
+                    // Тіло більше за ліміт ([RequestSizeLimit], напр. завеликі файли поста): MVC повідомляє це
+                    // як помилку прив'язки англійською — віддаємо 413 з українським текстом.
+                    var maxBodySize = context.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>()?.MaxRequestBodySize;
+                    if (context.HttpContext.Request.ContentLength > maxBodySize)
+                    {
+                        return new ObjectResult(new ApiErrorResponse(GlobalExceptionHandlingMiddleware.PayloadTooLargeMessage))
+                        {
+                            StatusCode = StatusCodes.Status413PayloadTooLarge,
+                        };
+                    }
+
                     var errors = context.ModelState
                         .Where(e => e.Value?.Errors.Count > 0)
                         .ToDictionary(
