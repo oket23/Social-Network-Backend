@@ -12,7 +12,9 @@ public class CreatePostRequestValidator : AbstractValidator<CreatePostRequest>
         RuleFor(x => x.Files)
             .NotEmpty().WithMessage("Додайте хоча б одне фото чи відео.")
             .Must(files => files.Count <= PostService.MaxMediaCount)
-            .WithMessage($"Не більше {PostService.MaxMediaCount} медіафайлів в одному пості.");
+            .WithMessage($"Не більше {PostService.MaxMediaCount} медіафайлів в одному пості.")
+            .Must(files => files.Sum(f => f.Length) <= PostMediaFiles.MaxTotalSizeBytes)
+            .WithMessage($"Файли поста разом не можуть перевищувати {PostMediaFiles.MaxTotalSizeBytes / 1024 / 1024} МБ.");
     }
 }
 

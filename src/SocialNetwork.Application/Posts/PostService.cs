@@ -78,7 +78,10 @@ public class PostService : IPostService
         }
         catch
         {
-            // Пост не створився — завантажені фото нікому не потрібні, прибираємо їх зі сховища.
+            // Пост не створився — завантажені файли нікому не потрібні, прибираємо їх зі сховища.
+            // Спершу відкидаємо незбережений пост: якщо видалення файлу впаде, черга повторних спроб
+            // робить SaveChanges — і без цього разом із рядком черги записала б і "невдалий" пост.
+            _unitOfWork.DiscardChanges();
             foreach (var url in uploadedUrls)
             {
                 await _fileCleanup.TryDeleteOrEnqueue(url);

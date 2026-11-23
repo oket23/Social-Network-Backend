@@ -66,6 +66,19 @@ public class PostsTests
     }
 
     [Fact]
+    public async Task Create_MediaTypeInJson_IsString()
+    {
+        var (client, _) = await CreateUser();
+
+        var response = await client.PostAsync("/posts", PostForm("Відео", "image/png", "video/mp4"));
+
+        // Фронт отримує "image"/"video", а не 0/1.
+        var json = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"type\":\"image\"", json);
+        Assert.Contains("\"type\":\"video\"", json);
+    }
+
+    [Fact]
     public async Task Create_WithoutToken_Returns401()
     {
         var response = await _factory.CreateClient().PostAsync("/posts", PostForm("x", "image/png"));

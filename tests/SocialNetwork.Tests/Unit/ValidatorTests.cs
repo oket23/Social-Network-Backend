@@ -1,5 +1,9 @@
 using SocialNetwork.Application.Auth.Requests;
 using SocialNetwork.Application.Auth.Validators;
+using SocialNetwork.Application.Common.Files;
+using SocialNetwork.Application.Posts;
+using SocialNetwork.Application.Posts.Requests;
+using SocialNetwork.Application.Posts.Validators;
 using SocialNetwork.Application.Users.Requests;
 using SocialNetwork.Application.Users.Validators;
 
@@ -34,6 +38,31 @@ public class ValidatorTests
         });
 
         Assert.Contains(result.Errors, e => e.PropertyName == nameof(RegisterRequest.Username));
+    }
+
+    [Fact]
+    public void CreatePost_FilesTooLargeInTotal_IsInvalid()
+    {
+        // 4 відео по 50 МБ = 200 МБ: кожне окремо в межах ліміту, але разом більше за 150 МБ.
+        var files = Enumerable.Range(0, 4)
+            .Select(_ => new FileUpload(Stream.Null, "video/mp4", PostMediaFiles.MaxVideoSizeBytes))
+            .ToList();
+
+        var result = new CreatePostRequestValidator().Validate(new CreatePostRequest { Files = files });
+
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(CreatePostRequest.Files));
+    }
+
+    [Fact]
+    public void CreatePost_FilesWithinTotalLimit_IsValid()
+    {
+        var files = Enumerable.Range(0, 3)
+            .Select(_ => new FileUpload(Stream.Null, "video/mp4", PostMediaFiles.MaxVideoSizeBytes))
+            .ToList();
+
+        var result = new CreatePostRequestValidator().Validate(new CreatePostRequest { Files = files });
+
+        Assert.True(result.IsValid);
     }
 
     [Fact]

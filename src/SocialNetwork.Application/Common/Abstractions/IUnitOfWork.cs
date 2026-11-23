@@ -9,6 +9,12 @@ public interface IUnitOfWork
     Task<int> SaveChangesAsync(CancellationToken ct = default);
 
     /// <summary>
+    /// Відкидає всі ще не збережені зміни. Потрібно після невдалого SaveChanges: інакше наступне
+    /// збереження в тому ж запиті спробувало б записати ті самі "невдалі" сутності ще раз.
+    /// </summary>
+    void DiscardChanges();
+
+    /// <summary>
     /// Виконує дію в транзакції БД. Потрібно, коли між кроками є кілька окремих збережень
     /// (наприклад, UserManager зберігає сам, а ми ще оновлюємо refresh-токени).
     /// </summary>

@@ -16,9 +16,11 @@ public class FileCleanupBackgroundService : BackgroundService
     public const int MaxAttempts = 10;
 
     private const int BatchSize = 50;
-    private static readonly TimeSpan Interval = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan BaseBackoff = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan MaxBackoff = TimeSpan.FromHours(6);
+    // Раз на годину, а не частіше: кожен прохід — запит до БД, а безкоштовна Neon засинає лише після 5 хв
+    // без запитів. Прохід кожні 5 хв не давав би їй заснути й за місяць вичерпав би ліміт годин обчислень.
+    private static readonly TimeSpan Interval = TimeSpan.FromHours(1);
+    private static readonly TimeSpan BaseBackoff = TimeSpan.FromHours(1);
+    private static readonly TimeSpan MaxBackoff = TimeSpan.FromHours(24);
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<FileCleanupBackgroundService> _logger;

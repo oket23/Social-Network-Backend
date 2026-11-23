@@ -11,6 +11,8 @@ namespace SocialNetwork.Api.Middlewares;
 /// </summary>
 public class GlobalExceptionHandlingMiddleware
 {
+    public const string PayloadTooLargeMessage = "Запит завеликий: зменшіть розмір або кількість файлів.";
+
     private readonly RequestDelegate _next;
     private readonly ILogger<GlobalExceptionHandlingMiddleware> _logger;
     private readonly IHostEnvironment _environment;
@@ -78,6 +80,8 @@ public class GlobalExceptionHandlingMiddleware
         DbUpdateConcurrencyException => (StatusCodes.Status409Conflict,
             new ApiErrorResponse("Дані змінилися паралельним запитом. Повторіть дію.")),
 
+        BadHttpRequestException { StatusCode: StatusCodes.Status413PayloadTooLarge } => (
+            StatusCodes.Status413PayloadTooLarge, new ApiErrorResponse(PayloadTooLargeMessage)),
         BadHttpRequestException ex => (ex.StatusCode, new ApiErrorResponse(ex.Message)),
 
         // Деталі внутрішніх помилок показуємо лише в Development.

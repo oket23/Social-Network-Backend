@@ -9,6 +9,12 @@ public static class PostMediaFiles
     public const long MaxImageSizeBytes = 5 * 1024 * 1024;
     public const long MaxVideoSizeBytes = 50 * 1024 * 1024;
 
+    /// <summary>
+    /// Ліміт на всі файли одного поста разом. Без нього 10 відео дали б запит ~500 МБ —
+    /// забагато для безкоштовного Render (повільно, займає диск і пам'ять контейнера).
+    /// </summary>
+    public const long MaxTotalSizeBytes = 150 * 1024 * 1024;
+
     private static readonly Dictionary<string, string> ImageExtensions = new()
     {
         ["image/jpeg"] = ".jpg",

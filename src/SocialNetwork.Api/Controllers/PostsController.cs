@@ -27,7 +27,8 @@ public class PostsController : ControllerBase
     /// </summary>
     [HttpPost]
     [Consumes("multipart/form-data")]
-    [RequestSizeLimit(PostService.MaxMediaCount * PostMediaFiles.MaxVideoSizeBytes + 1024 * 1024)]
+    // +1 МБ на підпис і службові заголовки multipart; точну перевірку з зрозумілим текстом робить валідатор.
+    [RequestSizeLimit(PostMediaFiles.MaxTotalSizeBytes + 1024 * 1024)]
     [ProducesResponseType<ApiSuccessResponse<PostResponse>>(StatusCodes.Status200OK)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Create([FromForm] string? caption, [FromForm] List<IFormFile> files, CancellationToken ct)
